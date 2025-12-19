@@ -37,7 +37,8 @@ st.title("🕳️ Bohrprotokoll & Schichtenverzeichnis")
 def get_static_map_image(lat, lon, zoom=15):
     if not HAS_STATICMAP: return None
     try:
-        m = StaticMap(width=800, height=400, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
+        # Breite etwas höher rendern für gute Qualität
+        m = StaticMap(width=1000, height=500, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
         marker = StaticCircleMarker((lon, lat), 'red', 18)
         m.add_marker(marker)
         image = m.render(zoom=zoom)
@@ -130,7 +131,6 @@ def draw_header_on_page(canvas, doc):
     canvas.line(x_line_1, row_line_y, x_line_1, header_top) 
     canvas.line(x_line_2, header_bottom, x_line_2, header_top) 
     
-    # LOGO
     if meta.get('logo_bytes'):
         try:
             logo_data = ImageReader(BytesIO(meta['logo_bytes']))
@@ -156,7 +156,6 @@ def draw_header_on_page(canvas, doc):
         canvas.setFillColor(colors.black)
         canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
     
-    # TITEL
     center_x = x_line_1 + (x_line_2 - x_line_1) / 2
     canvas.setFillColor(colors.black)
     canvas.setFont("Helvetica-Bold", 12)
@@ -165,7 +164,6 @@ def draw_header_on_page(canvas, doc):
     canvas.drawCentredString(center_x, header_top - 1.0*cm, "nach DIN 4022 / DIN 4023")
     canvas.drawCentredString(center_x, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
     
-    # AKTENZEICHEN
     text_x_right = x_line_2 + 0.2*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 0.6*cm, "Aktenzeichen:")
@@ -174,26 +172,21 @@ def draw_header_on_page(canvas, doc):
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 1.5*cm, "Archiv-Nr:")
     
-    # UNTERE ZEILE
     text_y_row = row_line_y - 0.4*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(margin_left + 0.2*cm, text_y_row, f"Ort: {meta['ort']}")
     canvas.drawString(margin_left + 0.2*cm, text_y_row - 0.4*cm, f"Bohrung: {meta['projekt']}")
     
     canvas.line(x_line_2, header_bottom, x_line_2, row_line_y) 
-    
-    # --- FIX: DATUM UND BLATTNUMMER GETRENNT ---
     canvas.drawString(text_x_right, text_y_row, "Datum:")
     canvas.drawString(text_x_right, text_y_row - 0.4*cm, meta['datum'])
     
-    # Blattnummer oben rechts in der unteren Zelle (auf Höhe von "Datum:")
     page_num = doc.page
     canvas.drawRightString(page_width - margin_right - 0.2*cm, text_y_row, f"Blatt {page_num}")
-    
     canvas.restoreState()
 
 # ==============================================================================
-# 3. PDF BUILDER
+# 3. PDF BUILDER (FULL WIDTH)
 # ==============================================================================
 
 def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, map_image_buffer):
@@ -205,9 +198,23 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     
     story = []
     styles = getSampleStyleSheet()
-    style_h2 = styles['Heading2']
+    
+    # Stildefinitionen anpassen (kleinere Schrift)
     style_norm = styles['Normal']
-    style_bold = ParagraphStyle('Bold', parent=styles['Normal'], fontName='Helvetica-Bold')
+    style_norm.fontSize = 9  # Kleiner als vorher (war 10)
+    style_norm.leading = 11  # Zeilenabstand anpassen
+    
+    style_bold = ParagraphStyle('Bold', parent=style_norm, fontName='Helvetica-Bold')
+    style_h2 = styles['Heading2']
+    
+    # --- BREITEN BERECHNUNG ---
+    # Gesamtbreite der Seite minus Ränder (2cm links, 2cm rechts)
+    page_width, _ = A4
+    available_width = page_width - 4*cm
+    
+    # Spaltenaufteilung (z.B. erste Spalte 5cm, Rest der zweite Spalte)
+    col1_width = 5*cm
+    col2_width = available_width - col1_width
     
     # --- TABELLE 1: ALLGEMEINE DATEN ---
     data_block1 = [
@@ -218,7 +225,9 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         [Paragraph("Art der Bohrung:", style_bold), Paragraph(meta['art_bohrung'], style_norm)],
         [Paragraph("Höhe des Ansatzpunktes:", style_bold), Paragraph(f"{meta['ansatz']} m u. GOK", style_norm)]
     ]
-    t1 = Table(data_block1, colWidths=[5*cm, 11*cm])
+    
+    # colWidths exakt so setzen, dass sie die volle Breite füllen
+    t1 = Table(data_block1, colWidths=[col1_width, col2_width])
     t1.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
@@ -230,7 +239,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(Spacer(1, 0.5*cm))
     
     # --- TABELLE 2: AUSFÜHRUNGSDATEN ---
-    # NEU: Gitterwerte hier als letzte Zeile eingefügt
     data_block2 = [
         [Paragraph("Auftraggeber:", style_bold), Paragraph(meta['auftraggeber'], style_norm)],
         [Paragraph("Objekt:", style_bold), Paragraph(meta['objekt'], style_norm)],
@@ -239,10 +247,11 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         [Paragraph("Gebohrt:", style_bold), Paragraph(meta['datum'], style_norm)],
         [Paragraph("Bohrlochdurchmesser:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['durchmesser']}mm", style_norm)],
         [Paragraph("Bohrverfahren:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['verfahren']}", style_norm)],
-        [Paragraph("Gitterwerte:", style_bold), Paragraph(f"Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}", style_norm)] # NEU
+        [Paragraph("Gitterwerte:", style_bold), Paragraph(f"Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}", style_norm)]
     ]
     
-    t2 = Table(data_block2, colWidths=[5*cm, 11*cm])
+    # Auch hier volle Breite
+    t2 = Table(data_block2, colWidths=[col1_width, col2_width])
     t2.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
@@ -253,15 +262,33 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t2)
     story.append(Spacer(1, 0.5*cm))
     
-    # Karte
-    story.append(Paragraph("Lageplan", style_h2))
+    # --- KARTE MIT RAHMEN ---
+    # Überschrift "Lageplan" wurde entfernt
+    
     if map_image_buffer:
         img = RLImage(map_image_buffer)
-        img.drawHeight = 8*cm
-        img.drawWidth = 14*cm
-        story.append(img)
+        
+        # Bild auf volle verfügbare Breite skalieren
+        img_width = available_width
+        aspect = img.imageHeight / float(img.imageWidth)
+        img.drawWidth = img_width
+        img.drawHeight = img_width * aspect
+        
+        # Bild in eine Tabelle packen, um den Rahmen zu zeichnen
+        t_map = Table([[img]], colWidths=[available_width])
+        t_map.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black), # Schwarzer Rahmen um die Karte
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ]))
+        story.append(t_map)
     else:
         story.append(Paragraph("(Keine Karte)", style_norm))
+        
     story.append(PageBreak())
     
     # Seite 2 (Schichten)
