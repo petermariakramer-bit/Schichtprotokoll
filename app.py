@@ -6,13 +6,14 @@ from geopy.geocoders import Nominatim
 import html
 from io import BytesIO
 
-# --- IMPORTS PRÜFEN ---
+# --- OPTIONALE IMPORTS ---
 try:
     from staticmap import StaticMap, CircleMarker as StaticCircleMarker
     HAS_STATICMAP = True
 except ImportError:
     HAS_STATICMAP = False
 
+# --- REPORTLAB IMPORTS ---
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm, mm
@@ -31,13 +32,11 @@ if 'lon' not in st.session_state: st.session_state.lon = 13.1905
 st.title("🕳️ Bohrprotokoll & Schichtenverzeichnis")
 
 # ==============================================================================
-# 1. HELPER: KARTE
+# 1. HELPER
 # ==============================================================================
 def get_static_map_image(lat, lon, zoom=15):
-    if not HAS_STATICMAP:
-        return None
+    if not HAS_STATICMAP: return None
     try:
-        # Erstellt ein statisches Bild der Karte
         m = StaticMap(width=1000, height=500, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
         marker = StaticCircleMarker((lon, lat), 'red', 18)
         m.add_marker(marker)
@@ -46,13 +45,8 @@ def get_static_map_image(lat, lon, zoom=15):
         image.save(img_buffer, format='PNG')
         img_buffer.seek(0)
         return img_buffer
-    except Exception as e:
-        print(f"Kartenfehler: {e}")
-        return None
+    except: return None
 
-# ==============================================================================
-# 2. HELPER: SVG GRAFIK (NEU MIT FARBE + MUSTER GETRENNT)
-# ==============================================================================
 def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     scale_y = 15
     width = 700
@@ -64,40 +58,38 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
     
     # --- DEFINITIONEN (Muster OHNE Hintergrundfarbe!) ---
-    # Die Farbe wird später separat als Rechteck darunter gelegt.
     svg += '''<defs>
     <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse">
-        <circle cx="2" cy="2" r="1" fill="#000000" opacity="0.5"/>
-        <circle cx="7" cy="7" r="1" fill="#000000" opacity="0.5"/>
+        <circle cx="2" cy="2" r="1.5" fill="black"/>
+        <circle cx="7" cy="7" r="1.5" fill="black"/>
+    </pattern>
+    
+    <pattern id="pat-Mudde-Dots" width="10" height="10" patternUnits="userSpaceOnUse">
+        <circle cx="3" cy="3" r="1.5" fill="#5D4037"/> <circle cx="8" cy="8" r="1.5" fill="#5D4037"/>
     </pattern>
     
     <pattern id="pat-Kies" width="12" height="12" patternUnits="userSpaceOnUse">
-        <circle cx="6" cy="6" r="3" fill="none" stroke="#000000" stroke-width="1" opacity="0.6"/>
+        <circle cx="6" cy="6" r="3" fill="none" stroke="black" stroke-width="1"/>
     </pattern>
     
     <pattern id="pat-Schluff" width="4" height="4" patternUnits="userSpaceOnUse">
-        <line x1="2" y1="0" x2="2" y2="4" stroke="#000000" stroke-width="0.5" opacity="0.6"/>
+        <line x1="2" y1="0" x2="2" y2="4" stroke="black" stroke-width="0.5"/>
     </pattern>
     
     <pattern id="pat-Ton" width="4" height="4" patternUnits="userSpaceOnUse">
-        <line x1="0" y1="2" x2="4" y2="2" stroke="#000000" stroke-width="0.5" opacity="0.6"/>
+        <line x1="0" y1="2" x2="4" y2="2" stroke="black" stroke-width="0.5"/>
     </pattern>
     
     <pattern id="pat-Lehm" width="6" height="6" patternUnits="userSpaceOnUse">
-        <path d="M3,0 L3,6 M0,3 L6,3" stroke="#000000" stroke-width="0.5" opacity="0.6"/>
-    </pattern>
-    
-    <pattern id="pat-Mudde" width="8" height="8" patternUnits="userSpaceOnUse">
-        <line x1="4" y1="0" x2="4" y2="8" stroke="#000000" stroke-width="1"/>
-        <path d="M2,2 L6,2" stroke="#000000" stroke-width="1"/>
+        <path d="M3,0 L3,6 M0,3 L6,3" stroke="black" stroke-width="0.5"/>
     </pattern>
     
     <pattern id="pat-Mutterboden" width="10" height="10" patternUnits="userSpaceOnUse">
-        <path d="M2,5 L5,8 L8,5" fill="none" stroke="#000000" stroke-width="1"/>
+        <path d="M2,5 L5,8 L8,5" fill="none" stroke="black" stroke-width="1"/>
     </pattern>
     
     <pattern id="pat-Auffuellung" width="10" height="10" patternUnits="userSpaceOnUse">
-        <path d="M0,10 L10,0" stroke="#000000" stroke-width="1"/>
+        <path d="M0,10 L10,0" stroke="black" stroke-width="1"/>
     </pattern>
 
     <pattern id="pat-Tonsperre" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#795548"/><path d="M0,10 l10,-10" stroke="white"/></pattern>
@@ -110,7 +102,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     col_geo_w = 100
     col_tech_x = 350
     
-    # Skala Linie
+    # Skala
     svg += f'<line x1="{col_geo_x}" y1="{start_y}" x2="{col_geo_x}" y2="{start_y + max_depth*scale_y}" stroke="black"/>'
     for i in range(int(max_depth)+1):
         y = start_y + i*scale_y
@@ -124,7 +116,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
         # 1. FARBE und MUSTER BESTIMMEN
         boden_text = (str(r.get('f', '')) + " " + str(r.get('a', '')) + " " + str(r.get('g', ''))).lower()
         
-        # Standard: Sand / Gelb
+        # Default Sand
         fill_color = "#FFF59D" # Gelb
         pattern_url = "url(#pat-Sand)"
         
@@ -141,36 +133,35 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
             fill_color = "#FFE082" # Gelb-Braun
             pattern_url = "url(#pat-Lehm)"
         elif "mudde" in boden_text or "torf" in boden_text:
-            fill_color = "#8D6E63" # Dunkelbraun/Violett
-            pattern_url = "url(#pat-Mudde)"
+            # WUNSCH: Grün mit braunen Punkten
+            fill_color = "#AED581" # Hellgrün
+            pattern_url = "url(#pat-Mudde-Dots)"
         elif "mutterboden" in boden_text:
-            fill_color = "#5D4037" # Sehr dunkel
+            fill_color = "#5D4037" # Dunkel
             pattern_url = "url(#pat-Mutterboden)"
         elif "auffüllung" in boden_text:
             fill_color = "#EEEEEE" # Grau
             pattern_url = "url(#pat-Auffuellung)"
         
-        # Expliziter Check auf Sand zum Schluss (falls "feinsandig" woanders steht, aber Bodenart Sand ist)
+        # Priorität Sand
         if "sand" in str(r.get('f', '')).lower():
             fill_color = "#FFF59D"
             pattern_url = "url(#pat-Sand)"
 
-        # 2. ZEICHNEN
-        # SCHICHT A: Hintergrundfarbe (Solides Rechteck)
+        # 2. ZEICHNEN (Layering: Farbe, dann Muster)
         svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="{fill_color}" stroke="none"/>'
-        
-        # SCHICHT B: Muster (Transparenter Hintergrund, liegt darüber)
         svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="{pattern_url}" stroke="black"/>'
         
         # Beschriftung
         label = r.get('f', '')
-        # Textfarbe weiß bei sehr dunklen Hintergründen
-        text_col = "white" if fill_color in ["#5D4037", "#8D6E63"] else "black"
+        # Textfarbe: Weiß nur bei sehr dunklem Mutterboden, Mudde ist jetzt grün -> schwarz
+        text_col = "white" if fill_color == "#5D4037" else "black"
+        
         svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10" fill="{text_col}">{label}</text>'
         
         last_d = r['Bis_m']
         
-    # Technischer Ausbau
+    # Technik
     for _, r in df_ring.iterrows():
         y = start_y + r['Von']*scale_y
         h = (r['Bis'] - r['Von']) * scale_y
@@ -190,7 +181,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     return svg
 
 # ==============================================================================
-# 3. PDF HEADER (Identisch, nur zur Sicherheit)
+# 2. PDF HEADER
 # ==============================================================================
 def draw_header_on_page(canvas, doc):
     canvas.saveState()
@@ -271,15 +262,19 @@ def draw_header_on_page(canvas, doc):
     canvas.restoreState()
 
 # ==============================================================================
-# 4. PDF BUILDER (FULL)
+# 3. PDF BUILDER
 # ==============================================================================
+
 def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, map_image_buffer):
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=5*cm, bottomMargin=2*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, 
+                            rightMargin=2*cm, leftMargin=2*cm, 
+                            topMargin=5*cm, bottomMargin=2*cm)
     doc.meta_data = meta
     
     story = []
     styles = getSampleStyleSheet()
+    
     style_tab_norm = ParagraphStyle('TabNorm', parent=styles['Normal'], fontSize=8, leading=10)
     style_tab_bold = ParagraphStyle('TabBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     style_geo_norm = ParagraphStyle('GeoNorm', parent=styles['Normal'], fontSize=7, leading=8)
@@ -301,7 +296,14 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         [Paragraph("Höhe des Ansatzpunktes:", style_tab_bold), Paragraph(f"{meta['ansatz']} m u. GOK", style_tab_norm)]
     ]
     t1 = Table(data_block1, colWidths=[col1_width, col2_width])
-    t1.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke), ('LEFTPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 3), ('TOPPADDING', (0,0), (-1,-1), 3)]))
+    t1.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
+        ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+    ]))
     story.append(t1)
     story.append(Spacer(1, 0.5*cm))
     
@@ -316,7 +318,14 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         [Paragraph("Gitterwerte:", style_tab_bold), Paragraph(f"Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}", style_tab_norm)]
     ]
     t2 = Table(data_block2, colWidths=[col1_width, col2_width])
-    t2.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke), ('LEFTPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 3), ('TOPPADDING', (0,0), (-1,-1), 3)]))
+    t2.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
+        ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+    ]))
     story.append(t2)
     story.append(Spacer(1, 0.5*cm))
     
@@ -327,15 +336,24 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         img.drawWidth = img_width
         img.drawHeight = img_width * aspect
         t_map = Table([[img]], colWidths=[available_width])
-        t_map.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0)]))
+        t_map.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ]))
         story.append(t_map)
     else:
-        story.append(Paragraph("(Keine Karte verfügbar - prüfen Sie 'requirements.txt' auf 'staticmap')", style_tab_norm))
+        story.append(Paragraph("(Keine Karte verfügbar - staticmap prüfen)", style_tab_norm))
         
     story.append(PageBreak())
     
     # --- SEITE 2: SCHICHTENVERZEICHNIS ---
     w_inner = [2.5*cm, 2.5*cm, 2.5*cm, 1.5*cm] 
+    
     def create_nested_desc_table(a, b, c, d, e, f, g, h, i, is_header=False):
         s = style_geo_header if is_header else style_geo_norm
         data = [
@@ -345,7 +363,17 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             [Paragraph(f"{f}", s), Paragraph(f"{g}", s), Paragraph(f"{h}", s), Paragraph(f"{i}", s)] 
         ]
         t = Table(data, colWidths=w_inner)
-        t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('SPAN', (0,0), (-1,0)), ('SPAN', (0,1), (-1,1)), ('SPAN', (2,2), (3,2)), ('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 6), ('RIGHTPADDING', (0,0), (-1,-1), 2), ('TOPPADDING', (0,0), (-1,-1), 1), ('BOTTOMPADDING', (0,0), (-1,-1), 1)]))
+        t.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('SPAN', (0,0), (-1,0)), 
+            ('SPAN', (0,1), (-1,1)), 
+            ('SPAN', (2,2), (3,2)),  
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 6),
+            ('RIGHTPADDING', (0,0), (-1,-1), 2),
+            ('TOPPADDING', (0,0), (-1,-1), 1),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+        ]))
         return t
 
     h_row1 = [Paragraph("1", style_geo_header), Paragraph("2", style_geo_header), Paragraph("3", style_geo_header), Paragraph("4", style_geo_header), Paragraph("5", style_geo_header), Paragraph("6", style_geo_header)]
@@ -362,11 +390,27 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             f"i) {row['i']}" if row['i'] else "i)"
         )
         p_tiefe = f"{row['p_tiefe']:.2f}" if row['p_tiefe'] > 0 else ""
-        table_data.append([Paragraph(f"{row['Bis_m']:.2f}", style_geo_center), nested_data, Paragraph(str(row['Bemerkung']), style_geo_norm), Paragraph(str(row['p_art']), style_geo_norm), Paragraph(str(row['p_nr']), style_geo_norm), Paragraph(p_tiefe, style_geo_norm)])
+        table_data.append([
+            Paragraph(f"{row['Bis_m']:.2f}", style_geo_center),
+            nested_data, 
+            Paragraph(str(row['Bemerkung']), style_geo_norm),
+            Paragraph(str(row['p_art']), style_geo_norm),
+            Paragraph(str(row['p_nr']), style_geo_norm),
+            Paragraph(p_tiefe, style_geo_norm)
+        ])
     
     col_widths = [1.5*cm, sum(w_inner), 3.0*cm, 1.2*cm, 1.0*cm, 1.3*cm]
     t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
-    t_geo.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (0,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('BACKGROUND', (0,1), (-1,1), colors.white)]))
+    t_geo.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'), 
+        ('ALIGN', (0,0), (0,-1), 'CENTER'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0), 
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ('BACKGROUND', (0,1), (-1,1), colors.white),
+    ]))
     story.append(t_geo)
     story.append(PageBreak())
     
@@ -385,8 +429,9 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     return buffer.getvalue()
 
 # ==============================================================================
-# GUI
+# 4. GUI
 # ==============================================================================
+
 with st.expander("1. Kopfblatt & Standort", expanded=True):
     col_map, col_data = st.columns([1, 1])
     with col_data:
@@ -426,8 +471,6 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         m = folium.Map([st.session_state.lat, st.session_state.lon], zoom_start=16)
         folium.CircleMarker([st.session_state.lat, st.session_state.lon], radius=8, color="red", fill=True, fill_color="red").add_to(m)
         st_folium(m, height=350)
-        if not HAS_STATICMAP:
-            st.warning("⚠️ Hinweis: Die Bibliothek 'staticmap' fehlt. Im PDF wird keine Karte angezeigt. Bitte fügen Sie 'staticmap' zur requirements.txt hinzu.")
 
 with st.expander("2. Schichtenverzeichnis (DIN Eingabe)", expanded=False):
     default_geo = [{"Bis_m": 14.00, "a": "mittelsandig", "b": "", "c": "erdfeucht", "d": "mäßig schwer", "e": "braun", "f": "Sand", "g": "", "h": "SE", "i": "0", "Bemerkung": "", "p_art": "", "p_nr": "", "p_tiefe": 0.0}, {"Bis_m": 29.00, "a": "Tf, Mutterboden", "b": "", "c": "steif", "d": "mäßig schwer", "e": "dunkelbraun", "f": "Mudde", "g": "", "h": "SU*-TL", "i": "+", "Bemerkung": "WSP angebohrt", "p_art": "", "p_nr": "", "p_tiefe": 0.0}]
