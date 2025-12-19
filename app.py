@@ -6,14 +6,13 @@ from geopy.geocoders import Nominatim
 import html
 from io import BytesIO
 
-# --- OPTIONALE IMPORTS ---
+# --- IMPORTS PRÜFEN ---
 try:
     from staticmap import StaticMap, CircleMarker as StaticCircleMarker
     HAS_STATICMAP = True
 except ImportError:
     HAS_STATICMAP = False
 
-# --- REPORTLAB IMPORTS ---
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm, mm
@@ -32,10 +31,11 @@ if 'lon' not in st.session_state: st.session_state.lon = 13.1905
 st.title("🕳️ Bohrprotokoll & Schichtenverzeichnis")
 
 # ==============================================================================
-# 1. HELPER
+# 1. HELPER: KARTE
 # ==============================================================================
 def get_static_map_image(lat, lon, zoom=15):
-    if not HAS_STATICMAP: return None
+    if not HAS_STATICMAP:
+        return None
     try:
         m = StaticMap(width=1000, height=500, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
         marker = StaticCircleMarker((lon, lat), 'red', 18)
@@ -45,8 +45,13 @@ def get_static_map_image(lat, lon, zoom=15):
         image.save(img_buffer, format='PNG')
         img_buffer.seek(0)
         return img_buffer
-    except: return None
+    except Exception as e:
+        print(f"Kartenfehler: {e}")
+        return None
 
+# ==============================================================================
+# 2. HELPER: SVG GRAFIK (Fix: Quadrate statt Kreise für Punkte)
+# ==============================================================================
 def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     scale_y = 15
     width = 700
@@ -57,15 +62,18 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
     
-    # --- DEFINITIONEN (Muster OHNE Hintergrundfarbe!) ---
+    # --- DEFINITIONEN ---
+    # WICHTIG: Kreise (<circle>) in Patterns machen oft Probleme im PDF-Export.
+    # Wir nutzen stattdessen kleine Quadrate (<rect>), das ist robuster.
     svg += '''<defs>
     <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse">
-        <circle cx="2" cy="2" r="1.5" fill="black"/>
-        <circle cx="7" cy="7" r="1.5" fill="black"/>
+        <rect x="2" y="2" width="2" height="2" fill="black"/>
+        <rect x="7" y="7" width="2" height="2" fill="black"/>
     </pattern>
     
     <pattern id="pat-Mudde-Dots" width="10" height="10" patternUnits="userSpaceOnUse">
-        <circle cx="3" cy="3" r="1.5" fill="#5D4037"/> <circle cx="8" cy="8" r="1.5" fill="#5D4037"/>
+        <rect x="2" y="2" width="2" height="2" fill="#5D4037"/>
+        <rect x="7" y="7" width="2" height="2" fill="#5D4037"/>
     </pattern>
     
     <pattern id="pat-Kies" width="12" height="12" patternUnits="userSpaceOnUse">
@@ -85,7 +93,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     </pattern>
     
     <pattern id="pat-Mutterboden" width="10" height="10" patternUnits="userSpaceOnUse">
-        <path d="M2,5 L5,8 L8,5" fill="none" stroke="black" stroke-width="1"/>
+        <path d="M2,5 L5,8 L8,5" fill="none" stroke="white" stroke-width="1.5"/>
     </pattern>
     
     <pattern id="pat-Auffuellung" width="10" height="10" patternUnits="userSpaceOnUse">
@@ -113,11 +121,11 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     for _, r in df_geo.iterrows():
         h = (r['Bis_m'] - last_d) * scale_y
         
-        # 1. FARBE und MUSTER BESTIMMEN
+        # Textanalyse für Muster
         boden_text = (str(r.get('f', '')) + " " + str(r.get('a', '')) + " " + str(r.get('g', ''))).lower()
         
-        # Default Sand
-        fill_color = "#FFF59D" # Gelb
+        # Standard: Sand (Gelb)
+        fill_color = "#FFF59D" 
         pattern_url = "url(#pat-Sand)"
         
         if "kies" in boden_text:
@@ -133,12 +141,11 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
             fill_color = "#FFE082" # Gelb-Braun
             pattern_url = "url(#pat-Lehm)"
         elif "mudde" in boden_text or "torf" in boden_text:
-            # WUNSCH: Grün mit braunen Punkten
-            fill_color = "#AED581" # Hellgrün
-            pattern_url = "url(#pat-Mudde-Dots)"
+            fill_color = "#AED581" # Hellgrün (Wunsch)
+            pattern_url = "url(#pat-Mudde-Dots)" # Braune Punkte (Wunsch)
         elif "mutterboden" in boden_text:
-            fill_color = "#5D4037" # Dunkel
-            pattern_url = "url(#pat-Mutterboden)"
+            fill_color = "#5D4037" # Dunkelbraun
+            pattern_url = "url(#pat-Mutterboden)" # Weißes Gras
         elif "auffüllung" in boden_text:
             fill_color = "#EEEEEE" # Grau
             pattern_url = "url(#pat-Auffuellung)"
@@ -148,20 +155,21 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
             fill_color = "#FFF59D"
             pattern_url = "url(#pat-Sand)"
 
-        # 2. ZEICHNEN (Layering: Farbe, dann Muster)
+        # 1. Rechteck Farbe
         svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="{fill_color}" stroke="none"/>'
+        # 2. Rechteck Muster (Transparent mit Musterfüllung)
         svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="{pattern_url}" stroke="black"/>'
         
-        # Beschriftung
+        # 3. Text (Sicherstellen dass Farbe sichtbar ist)
         label = r.get('f', '')
-        # Textfarbe: Weiß nur bei sehr dunklem Mutterboden, Mudde ist jetzt grün -> schwarz
+        # Weißer Text nur bei sehr dunklem Mutterboden, sonst Schwarz (auch bei Grün/Mudde)
         text_col = "white" if fill_color == "#5D4037" else "black"
         
         svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10" fill="{text_col}">{label}</text>'
         
         last_d = r['Bis_m']
         
-    # Technik
+    # Technik Ausbau
     for _, r in df_ring.iterrows():
         y = start_y + r['Von']*scale_y
         h = (r['Bis'] - r['Von']) * scale_y
@@ -181,7 +189,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     return svg
 
 # ==============================================================================
-# 2. PDF HEADER
+# 3. PDF HEADER & BUILDER
 # ==============================================================================
 def draw_header_on_page(canvas, doc):
     canvas.saveState()
@@ -261,15 +269,9 @@ def draw_header_on_page(canvas, doc):
     canvas.drawRightString(page_width - margin_right - 0.2*cm, text_y_row, f"Blatt {page_num}")
     canvas.restoreState()
 
-# ==============================================================================
-# 3. PDF BUILDER
-# ==============================================================================
-
 def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, map_image_buffer):
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, 
-                            rightMargin=2*cm, leftMargin=2*cm, 
-                            topMargin=5*cm, bottomMargin=2*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=5*cm, bottomMargin=2*cm)
     doc.meta_data = meta
     
     story = []
@@ -296,14 +298,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         [Paragraph("Höhe des Ansatzpunktes:", style_tab_bold), Paragraph(f"{meta['ansatz']} m u. GOK", style_tab_norm)]
     ]
     t1 = Table(data_block1, colWidths=[col1_width, col2_width])
-    t1.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
-        ('LEFTPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ('TOPPADDING', (0,0), (-1,-1), 3),
-    ]))
+    t1.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke), ('LEFTPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 3), ('TOPPADDING', (0,0), (-1,-1), 3)]))
     story.append(t1)
     story.append(Spacer(1, 0.5*cm))
     
@@ -318,14 +313,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         [Paragraph("Gitterwerte:", style_tab_bold), Paragraph(f"Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}", style_tab_norm)]
     ]
     t2 = Table(data_block2, colWidths=[col1_width, col2_width])
-    t2.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
-        ('LEFTPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ('TOPPADDING', (0,0), (-1,-1), 3),
-    ]))
+    t2.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke), ('LEFTPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 3), ('TOPPADDING', (0,0), (-1,-1), 3)]))
     story.append(t2)
     story.append(Spacer(1, 0.5*cm))
     
@@ -336,18 +324,10 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         img.drawWidth = img_width
         img.drawHeight = img_width * aspect
         t_map = Table([[img]], colWidths=[available_width])
-        t_map.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('LEFTPADDING', (0,0), (-1,-1), 0),
-            ('RIGHTPADDING', (0,0), (-1,-1), 0),
-            ('TOPPADDING', (0,0), (-1,-1), 0),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-        ]))
+        t_map.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0)]))
         story.append(t_map)
     else:
-        story.append(Paragraph("(Keine Karte verfügbar - staticmap prüfen)", style_tab_norm))
+        story.append(Paragraph("(Keine Karte verfügbar - prüfen Sie 'requirements.txt' auf 'staticmap')", style_tab_norm))
         
     story.append(PageBreak())
     
@@ -363,17 +343,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             [Paragraph(f"{f}", s), Paragraph(f"{g}", s), Paragraph(f"{h}", s), Paragraph(f"{i}", s)] 
         ]
         t = Table(data, colWidths=w_inner)
-        t.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('SPAN', (0,0), (-1,0)), 
-            ('SPAN', (0,1), (-1,1)), 
-            ('SPAN', (2,2), (3,2)),  
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (-1,-1), 6),
-            ('RIGHTPADDING', (0,0), (-1,-1), 2),
-            ('TOPPADDING', (0,0), (-1,-1), 1),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 1),
-        ]))
+        t.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('SPAN', (0,0), (-1,0)), ('SPAN', (0,1), (-1,1)), ('SPAN', (2,2), (3,2)), ('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 6), ('RIGHTPADDING', (0,0), (-1,-1), 2), ('TOPPADDING', (0,0), (-1,-1), 1), ('BOTTOMPADDING', (0,0), (-1,-1), 1)]))
         return t
 
     h_row1 = [Paragraph("1", style_geo_header), Paragraph("2", style_geo_header), Paragraph("3", style_geo_header), Paragraph("4", style_geo_header), Paragraph("5", style_geo_header), Paragraph("6", style_geo_header)]
@@ -390,27 +360,11 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             f"i) {row['i']}" if row['i'] else "i)"
         )
         p_tiefe = f"{row['p_tiefe']:.2f}" if row['p_tiefe'] > 0 else ""
-        table_data.append([
-            Paragraph(f"{row['Bis_m']:.2f}", style_geo_center),
-            nested_data, 
-            Paragraph(str(row['Bemerkung']), style_geo_norm),
-            Paragraph(str(row['p_art']), style_geo_norm),
-            Paragraph(str(row['p_nr']), style_geo_norm),
-            Paragraph(p_tiefe, style_geo_norm)
-        ])
+        table_data.append([Paragraph(f"{row['Bis_m']:.2f}", style_geo_center), nested_data, Paragraph(str(row['Bemerkung']), style_geo_norm), Paragraph(str(row['p_art']), style_geo_norm), Paragraph(str(row['p_nr']), style_geo_norm), Paragraph(p_tiefe, style_geo_norm)])
     
     col_widths = [1.5*cm, sum(w_inner), 3.0*cm, 1.2*cm, 1.0*cm, 1.3*cm]
     t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
-    t_geo.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'), 
-        ('ALIGN', (0,0), (0,-1), 'CENTER'),
-        ('LEFTPADDING', (0,0), (-1,-1), 0), 
-        ('RIGHTPADDING', (0,0), (-1,-1), 0),
-        ('TOPPADDING', (0,0), (-1,-1), 0),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-        ('BACKGROUND', (0,1), (-1,1), colors.white),
-    ]))
+    t_geo.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (0,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('BACKGROUND', (0,1), (-1,1), colors.white)]))
     story.append(t_geo)
     story.append(PageBreak())
     
@@ -431,7 +385,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
 # ==============================================================================
 # 4. GUI
 # ==============================================================================
-
 with st.expander("1. Kopfblatt & Standort", expanded=True):
     col_map, col_data = st.columns([1, 1])
     with col_data:
