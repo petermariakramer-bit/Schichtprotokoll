@@ -48,7 +48,6 @@ def get_static_map_image(lat, lon, zoom=15):
     except: return None
 
 def generate_svg_string(df_geo, df_rohr, df_ring, meta):
-    # ... (SVG Code bleibt identisch zur Vorversion) ...
     scale_y = 15
     width = 700
     max_depth = 48
@@ -108,7 +107,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     return svg
 
 # ==============================================================================
-# 2. PDF HEADER (Bleibt gleich)
+# 2. PDF HEADER
 # ==============================================================================
 def draw_header_on_page(canvas, doc):
     canvas.saveState()
@@ -187,7 +186,7 @@ def draw_header_on_page(canvas, doc):
     canvas.restoreState()
 
 # ==============================================================================
-# 3. PDF BUILDER (MIT ERWEITERTEN DATEN)
+# 3. PDF BUILDER
 # ==============================================================================
 
 def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, map_image_buffer):
@@ -203,14 +202,14 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     style_norm = styles['Normal']
     style_bold = ParagraphStyle('Bold', parent=styles['Normal'], fontName='Helvetica-Bold')
     
-    # --- TABELLE 1: ALLGEMEINE DATEN ---
-    # Bohrung | Ort | Kreis | Zweck | Ansatzhöhe
-    
+    # --- SEITE 1: TABELLE 1 (Allgemeine Daten) ---
+    # NEU: Art der Bohrung hinzugefügt
     data_block1 = [
         [Paragraph("Bohrung:", style_bold), Paragraph(meta['projekt'], style_norm)],
         [Paragraph("Ort:", style_bold), Paragraph(meta['ort'], style_norm)],
         [Paragraph("Kreis:", style_bold), Paragraph(meta['kreis'], style_norm)],
         [Paragraph("Zweck der Bohrung:", style_bold), Paragraph(meta['zweck'], style_norm)],
+        [Paragraph("Art der Bohrung:", style_bold), Paragraph(meta['art_bohrung'], style_norm)], # NEU
         [Paragraph("Höhe des Ansatzpunktes:", style_bold), Paragraph(f"{meta['ansatz']} m u. GOK", style_norm)]
     ]
     
@@ -225,13 +224,13 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t1)
     story.append(Spacer(1, 0.5*cm))
     
-    # --- TABELLE 2: AUSFÜHRUNGSDATEN ---
-    # Auftraggeber | Objekt | Unternehmer | Zeitraum | Durchmesser/Verfahren
-    
+    # --- SEITE 1: TABELLE 2 (Ausführungsdaten) ---
+    # NEU: Geräteführer hinzugefügt
     data_block2 = [
         [Paragraph("Auftraggeber:", style_bold), Paragraph(meta['auftraggeber'], style_norm)],
         [Paragraph("Objekt:", style_bold), Paragraph(meta['objekt'], style_norm)],
-        [Paragraph("Bohrunternehmer:", style_bold), Paragraph(meta['firma'], style_norm)], # Firma als Unternehmer
+        [Paragraph("Bohrunternehmer:", style_bold), Paragraph(meta['firma'], style_norm)],
+        [Paragraph("Geräteführer:", style_bold), Paragraph(meta['geraetefuehrer'], style_norm)], # NEU
         [Paragraph("Gebohrt:", style_bold), Paragraph(meta['datum'], style_norm)],
         [Paragraph("Bohrlochdurchmesser:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['durchmesser']}mm", style_norm)],
         [Paragraph("Bohrverfahren:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['verfahren']}", style_norm)]
@@ -248,9 +247,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t2)
     story.append(Spacer(1, 0.5*cm))
     
-    # --- KARTE MIT KOORDINATEN ---
-    
-    # Koordinatenzeile (Gitterwerte)
+    # Koordinaten & Karte
     coord_text = f"<b>Gitterwerte des Bohrpunktes:</b> Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}"
     story.append(Paragraph(coord_text, style_norm))
     story.append(Spacer(1, 0.2*cm))
@@ -315,7 +312,11 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         projekt = st.text_input("Projekt / Bohrung", value="Notwasserbrunnen ZE079-905")
         ort = st.text_input("Ort / Adresse", value="Wiesenschlag ggü 4, 14129 Berlin")
         kreis = st.text_input("Kreis", value="Berlin")
-        zweck = st.text_input("Zweck der Bohrung", value="Notbrunnen")
+        
+        # NEU: Felder für Zweck und Art nebeneinander
+        c_zweck, c_art = st.columns(2)
+        zweck = c_zweck.text_input("Zweck der Bohrung", value="Notbrunnen")
+        art_bohrung = c_art.text_input("Art der Bohrung", value="Grundwasser") # NEU
         
         if st.button("📍 Adresse suchen"):
             try:
@@ -323,6 +324,7 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
                 if loc: st.session_state.lat, st.session_state.lon = loc.latitude, loc.longitude
             except: pass
 
+        st.markdown("---")
         # Block 2 Inputs
         c1, c2 = st.columns(2)
         auftraggeber = c1.text_input("Auftraggeber", value="Berliner Wasserbetriebe")
@@ -330,7 +332,9 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         
         c3, c4 = st.columns(2)
         bohrfirma = c3.text_input("Bohrunternehmer", value="Ackermann KG")
-        datum_str = c4.text_input("Bohrzeitraum", value="06.10.25 - 08.10.25")
+        geraetefuehrer = c4.text_input("Geräteführer", value="C. Kempcke") # NEU
+        
+        datum_str = st.text_input("Bohrzeitraum", value="06.10.25 - 08.10.25")
         
         # Technische Details
         c5, c6 = st.columns(2)
@@ -381,7 +385,8 @@ meta_data = {
     "datum": datum_str, "aktenzeichen": aktenzeichen, 
     "verfahren": bohrverfahren, "durchmesser": bohrdurchmesser,
     "ansatz": ansatzpunkt, "teufe": endteufe, "ws_ruhe": ws_ruhe,
-    "kreis": kreis, "zweck": zweck, "objekt": objekt,
+    "kreis": kreis, "zweck": zweck, "art_bohrung": art_bohrung, "objekt": objekt,
+    "geraetefuehrer": geraetefuehrer,
     "rechtswert": rechtswert, "hochwert": hochwert,
     "logo_bytes": logo_bytes
 }
