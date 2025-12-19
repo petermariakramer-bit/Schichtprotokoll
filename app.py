@@ -66,9 +66,8 @@ def generate_svg(data_df, meta_data):
     scale_y = 40  # Pixel pro Meter
     
     # Layout-Konstanten
-    margin_top = 180  # Platz für den Kopfbogen
+    margin_top = 180
     margin_left = 80
-    graph_width = 400
     
     max_depth = data_df["bis"].max() if not data_df.empty else 10
     total_height = margin_top + (max_depth * scale_y) + 100
@@ -77,9 +76,10 @@ def generate_svg(data_df, meta_data):
     svg = f'<svg width="{total_width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">'
     
     # --- DEFS (Muster) ---
+    # WICHTIG: Hier habe ich die IDs angepasst (keine / mehr, sondern _)
     svg += '''
     <defs>
-        <pattern id="pat-Sand/Kies" width="10" height="10" patternUnits="userSpaceOnUse">
+        <pattern id="pat-Sand_Kies" width="10" height="10" patternUnits="userSpaceOnUse">
              <rect width="10" height="10" fill="#ffd700" fill-opacity="0.3"/>
              <circle cx="2" cy="2" r="1" fill="#d4a017" />
              <circle cx="7" cy="7" r="1" fill="#d4a017" />
@@ -103,51 +103,39 @@ def generate_svg(data_df, meta_data):
     </defs>
     '''
 
-    # --- KOPFBOGEN ZEICHNEN ---
-    # Rahmen um den Kopf
+    # --- KOPFBOGEN ---
     svg += f'<rect x="10" y="10" width="{total_width-20}" height="120" fill="none" stroke="black" stroke-width="2"/>'
     
-    # Logo Bereich (Links oben)
     svg += f'<text x="30" y="50" font-size="24" font-weight="bold" fill="#8B0000">{meta_data["company"]}</text>'
     svg += f'<text x="30" y="80" font-size="12">{meta_data["address"]}</text>'
-    svg += f'<line x1="10" y1="130" x2="{total_width-10}" y2="130" stroke="black" stroke-width="2"/>' # Trennlinie unten
+    svg += f'<line x1="10" y1="130" x2="{total_width-10}" y2="130" stroke="black" stroke-width="2"/>'
     
-    # Tabelle rechts im Kopf (Projektinfos)
     table_x = 300
-    svg += f'<line x1="{table_x}" y1="10" x2="{table_x}" y2="130" stroke="black" stroke-width="1"/>' # Vertikale Linie
+    svg += f'<line x1="{table_x}" y1="10" x2="{table_x}" y2="130" stroke="black" stroke-width="1"/>'
     
-    # Zeilen
     row_h = 30
     for i in range(1, 4):
         y = 10 + i * row_h
         svg += f'<line x1="{table_x}" y1="{y}" x2="{total_width-10}" y2="{y}" stroke="black" stroke-width="0.5"/>'
     
-    # --- KORREKTUR HIER ---
-    # Wir definieren eine Funktion, die den String ZURÜCKGIBT, anstatt "svg" direkt zu ändern.
     def get_row_svg(y, label, value):
         row_str = f'<text x="{table_x + 5}" y="{y+20}" font-size="10" font-weight="bold">{label}:</text>'
         row_str += f'<text x="{table_x + 80}" y="{y+20}" font-size="12">{value}</text>'
         return row_str
 
-    # Jetzt fügen wir das Ergebnis an "svg" an
     svg += get_row_svg(10, "Projekt", meta_data["project"])
     svg += get_row_svg(40, "Durchführung", meta_data["execution"])
     svg += get_row_svg(70, "Brunnentyp", meta_data["type"])
     svg += get_row_svg(100, "Datum", meta_data["date"])
-    # -----------------------
 
-    # Titel unter dem Kopf
     svg += f'<text x="{total_width/2}" y="160" font-size="18" font-weight="bold" text-anchor="middle">Bohrprofil</text>'
 
     # --- HAUPTZEICHNUNG ---
-    
-    # Meter-Skala (Links)
     for i in range(int(max_depth) + 1):
         y_pos = i * scale_y + margin_top
         svg += f'<line x1="{margin_left-10}" y1="{y_pos}" x2="{margin_left}" y2="{y_pos}" stroke="black" />'
         svg += f'<text x="{margin_left-15}" y="{y_pos}" font-size="10" text-anchor="end" dominant-baseline="middle">-{i}.00 m</text>'
 
-    # Schichten
     for index, row in data_df.iterrows():
         try:
             tiefe_von = float(row["von"])
@@ -155,17 +143,19 @@ def generate_svg(data_df, meta_data):
             material = row["material"]
             text = row["beschriftung"]
             
+            # --- FIX: ID Bereinigung ---
+            # Wir ersetzen / durch _ damit die ID gültig ist (z.B. pat-Sand_Kies)
+            safe_material_id = material.replace("/", "_").replace(" ", "_")
+            
             height = (tiefe_bis - tiefe_von) * scale_y
             y_start = tiefe_von * scale_y + margin_top
             y_end = tiefe_bis * scale_y + margin_top
             
-            # Schicht-Rechteck
-            svg += f'<rect x="{margin_left}" y="{y_start}" width="120" height="{height}" fill="url(#pat-{material})" stroke="black" />'
+            # Hier nutzen wir jetzt "safe_material_id"
+            svg += f'<rect x="{margin_left}" y="{y_start}" width="120" height="{height}" fill="url(#pat-{safe_material_id})" stroke="black" />'
             
-            # Exakte Tiefe
             svg += f'<text x="{margin_left-5}" y="{y_end}" font-size="10" text-anchor="end" dominant-baseline="middle">{tiefe_bis:.2f}m</text>'
             
-            # Beschriftung
             text_y = y_start + (height / 2)
             svg += f'<line x1="{margin_left + 120}" y1="{text_y}" x2="{margin_left + 140}" y2="{text_y}" stroke="#666" />'
             svg += f'<text x="{margin_left + 145}" y="{text_y}" font-size="12" dominant-baseline="middle">{text}</text>'
