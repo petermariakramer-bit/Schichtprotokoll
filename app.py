@@ -214,8 +214,11 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     style_geo_norm = ParagraphStyle('GeoNorm', parent=styles['Normal'], fontSize=7, leading=8)
     style_geo_header = ParagraphStyle('GeoHeader', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=1) # centered
     
+    # NEU: Stil für die Tiefenzahlen (zentriert)
+    style_geo_center = ParagraphStyle('GeoCenter', parent=styles['Normal'], fontName='Helvetica', fontSize=7, leading=8, alignment=1)
+    
     page_width, _ = A4
-    available_width = page_width - 4*cm # 21cm - 2cm - 2cm = 17cm
+    available_width = page_width - 4*cm
     col1_width = 5*cm
     col2_width = available_width - col1_width
     
@@ -287,7 +290,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     # --- SEITE 2: SCHICHTENVERZEICHNIS (VERSCHACHTELTE STRUKTUR MIT EXAKTER BREITE) ---
     
     # Gesamtbreite = 17cm
-    # Spaltenbreiten für die verschachtelte Tabelle (Summe = 9.0cm)
     w_inner = [2.5*cm, 2.5*cm, 2.5*cm, 1.5*cm] 
     
     # --- HELPER: NESTED TABLE GENERATOR ---
@@ -306,7 +308,8 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             ('SPAN', (0,1), (-1,1)), 
             ('SPAN', (2,2), (3,2)),  
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (-1,-1), 2),
+            # NEU: LEFTPADDING ERHÖHT (6) FÜR SPALTEN 3,4,5,6 (entspricht inneren spalten)
+            ('LEFTPADDING', (0,0), (-1,-1), 6), 
             ('RIGHTPADDING', (0,0), (-1,-1), 2),
             ('TOPPADDING', (0,0), (-1,-1), 1),
             ('BOTTOMPADDING', (0,0), (-1,-1), 1),
@@ -363,7 +366,8 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         p_tiefe = f"{row['p_tiefe']:.2f}" if row['p_tiefe'] > 0 else ""
         
         table_data.append([
-            Paragraph(f"{row['Bis_m']:.2f}", style_geo_norm),
+            # NEU: style_geo_center verwenden für zentrierte Zahl
+            Paragraph(f"{row['Bis_m']:.2f}", style_geo_center),
             nested_data, 
             Paragraph(str(row['Bemerkung']), style_geo_norm),
             Paragraph(str(row['p_art']), style_geo_norm),
@@ -372,7 +376,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         ])
     
     # HAUPT-SPALTENBREITEN (SUMME EXAKT 17cm)
-    # 1.5 + 9.0 + 3.0 + 1.2 + 1.0 + 1.3 = 17.0
     col_widths = [1.5*cm, sum(w_inner), 3.0*cm, 1.2*cm, 1.0*cm, 1.3*cm]
     
     t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
