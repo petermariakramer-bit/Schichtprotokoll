@@ -5,6 +5,7 @@ import folium
 from geopy.geocoders import Nominatim
 import html
 from io import BytesIO
+import math
 
 # --- IMPORTS PRÜFEN ---
 try:
@@ -50,7 +51,7 @@ def get_static_map_image(lat, lon, zoom=15):
         return None
 
 # ==============================================================================
-# 2. HELPER: SVG GRAFIK (Fix: 2-Ebenen-System)
+# 2. HELPER: SVG GRAFIK (MANUELLE MUSTER STATT PATTERNS)
 # ==============================================================================
 def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     scale_y = 15
@@ -62,42 +63,8 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
     
-    # --- DEFINITIONEN (Muster OHNE Hintergrundfarbe = Transparent) ---
+    # --- Definitionen für Technik-Muster (diese funktionieren meistens gut) ---
     svg += '''<defs>
-    <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse">
-        <rect x="2" y="2" width="2" height="2" fill="black"/>
-        <rect x="7" y="7" width="2" height="2" fill="black"/>
-    </pattern>
-    
-    <pattern id="pat-Mudde-Dots" width="10" height="10" patternUnits="userSpaceOnUse">
-        <rect x="2" y="2" width="3" height="3" fill="#5D4037"/>
-        <rect x="7" y="7" width="3" height="3" fill="#5D4037"/>
-    </pattern>
-    
-    <pattern id="pat-Kies" width="12" height="12" patternUnits="userSpaceOnUse">
-        <circle cx="6" cy="6" r="3" fill="none" stroke="black" stroke-width="1.5"/>
-    </pattern>
-    
-    <pattern id="pat-Schluff" width="4" height="4" patternUnits="userSpaceOnUse">
-        <line x1="2" y1="0" x2="2" y2="4" stroke="black" stroke-width="1"/>
-    </pattern>
-    
-    <pattern id="pat-Ton" width="4" height="4" patternUnits="userSpaceOnUse">
-        <line x1="0" y1="2" x2="4" y2="2" stroke="black" stroke-width="1"/>
-    </pattern>
-    
-    <pattern id="pat-Lehm" width="6" height="6" patternUnits="userSpaceOnUse">
-        <path d="M3,0 L3,6 M0,3 L6,3" stroke="black" stroke-width="1"/>
-    </pattern>
-    
-    <pattern id="pat-Mutterboden" width="10" height="10" patternUnits="userSpaceOnUse">
-        <path d="M2,5 L5,8 L8,5" fill="none" stroke="white" stroke-width="1.5"/>
-    </pattern>
-    
-    <pattern id="pat-Auffuellung" width="10" height="10" patternUnits="userSpaceOnUse">
-        <path d="M0,10 L10,0" stroke="black" stroke-width="1"/>
-    </pattern>
-
     <pattern id="pat-Tonsperre" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#795548"/><path d="M0,10 l10,-10" stroke="white"/></pattern>
     <pattern id="pat-Filterkies" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="white"/><circle cx="3" cy="3" r="1.5" fill="orange"/></pattern>
     <pattern id="pat-Filterrohr" width="10" height="5" patternUnits="userSpaceOnUse"><rect width="10" height="5" fill="white" stroke="black"/><line x1="2" y1="2" x2="8" y2="2" stroke="black"/></pattern>
@@ -118,55 +85,135 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     last_d = 0
     for _, r in df_geo.iterrows():
         h = (r['Bis_m'] - last_d) * scale_y
+        y_pos = start_y + last_d * scale_y
         
         # Textanalyse
         boden_text = (str(r.get('f', '')) + " " + str(r.get('a', '')) + " " + str(r.get('g', ''))).lower()
         
-        # Default: Sand / Gelb
-        fill_color = "#FFF59D" 
-        pattern_url = "url(#pat-Sand)"
+        # --- FARBE & TYP BESTIMMUNG ---
+        fill_color = "#FFF59D" # Default Sand Gelb
+        type_ = "sand"
         
         if "kies" in boden_text:
             fill_color = "#FFCC80" # Orange
-            pattern_url = "url(#pat-Kies)"
+            type_ = "kies"
         elif "schluff" in boden_text:
             fill_color = "#E6EE9C" # Ocker
-            pattern_url = "url(#pat-Schluff)"
+            type_ = "schluff"
         elif "ton" in boden_text:
             fill_color = "#BCAAA4" # Braun
-            pattern_url = "url(#pat-Ton)"
+            type_ = "ton"
         elif "lehm" in boden_text:
             fill_color = "#FFE082" # Gelb-Braun
-            pattern_url = "url(#pat-Lehm)"
+            type_ = "lehm"
         elif "mudde" in boden_text or "torf" in boden_text:
             fill_color = "#AED581" # Hellgrün
-            pattern_url = "url(#pat-Mudde-Dots)" # Braune Punkte
+            type_ = "mudde"
         elif "mutterboden" in boden_text:
             fill_color = "#5D4037" # Dunkelbraun
-            pattern_url = "url(#pat-Mutterboden)"
+            type_ = "mutterboden"
         elif "auffüllung" in boden_text:
             fill_color = "#EEEEEE" # Grau
-            pattern_url = "url(#pat-Auffuellung)"
+            type_ = "auffuellung"
         
-        # Priorität Sand
         if "sand" in str(r.get('f', '')).lower():
             fill_color = "#FFF59D"
-            pattern_url = "url(#pat-Sand)"
+            type_ = "sand"
 
-        # 1. Rechteck: Nur FARBE (Solide)
-        svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="{fill_color}" stroke="none"/>'
+        # 1. HINTERGRUND FARBE ZEICHNEN
+        svg += f'<rect x="{col_geo_x}" y="{y_pos}" width="{col_geo_w}" height="{h}" fill="{fill_color}" stroke="black"/>'
         
-        # 2. Rechteck: Nur MUSTER (Transparent, liegt drüber)
-        svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="{pattern_url}" stroke="black" stroke-width="1"/>'
+        # 2. MUSTER "MANUELL" ZEICHNEN (Inline SVG Elements)
+        # Wir iterieren über die Fläche und zeichnen Symbole
         
-        # Text
+        # Clip-Path simulieren: Wir zeichnen einfach nur innerhalb der Box
+        # Da wir rects zeichnen, können wir einfach die Koordinaten beschränken.
+        
+        pattern_group = ""
+        
+        if type_ == "sand":
+            # Schwarze Punkte (kleine Rechtecke)
+            step = 10
+            for py in range(int(y_pos), int(y_pos + h), step):
+                for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
+                    # Versatz für Muster
+                    offset = 5 if (py // step) % 2 == 0 else 0
+                    if px + offset < col_geo_x + col_geo_w:
+                        pattern_group += f'<rect x="{px + offset}" y="{py}" width="1.5" height="1.5" fill="black"/>'
+                        
+        elif type_ == "mudde":
+            # Braune Punkte auf Grün
+            step = 12
+            for py in range(int(y_pos), int(y_pos + h), step):
+                for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
+                    offset = 6 if (py // step) % 2 == 0 else 0
+                    if px + offset < col_geo_x + col_geo_w:
+                        pattern_group += f'<rect x="{px + offset}" y="{py}" width="2.5" height="2.5" fill="#5D4037"/>'
+
+        elif type_ == "kies":
+            # Kreise
+            step = 12
+            for py in range(int(y_pos), int(y_pos + h), step):
+                for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
+                    if px + 6 < col_geo_x + col_geo_w and py + 6 < y_pos + h:
+                        pattern_group += f'<circle cx="{px+4}" cy="{py+4}" r="2.5" fill="none" stroke="black" stroke-width="1"/>'
+
+        elif type_ == "schluff":
+            # Vertikale Linien
+            step = 4
+            for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
+                pattern_group += f'<line x1="{px}" y1="{y_pos}" x2="{px}" y2="{y_pos+h}" stroke="black" stroke-width="0.5"/>'
+
+        elif type_ == "ton":
+            # Horizontale Linien
+            step = 4
+            for py in range(int(y_pos), int(y_pos + h), step):
+                pattern_group += f'<line x1="{col_geo_x}" y1="{py}" x2="{col_geo_x+col_geo_w}" y2="{py}" stroke="black" stroke-width="0.5"/>'
+
+        elif type_ == "lehm":
+            # Gitter (Hor + Vert)
+            step = 6
+            # Vert
+            for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
+                pattern_group += f'<line x1="{px}" y1="{y_pos}" x2="{px}" y2="{y_pos+h}" stroke="black" stroke-width="0.5"/>'
+            # Hor
+            for py in range(int(y_pos), int(y_pos + h), step):
+                pattern_group += f'<line x1="{col_geo_x}" y1="{py}" x2="{col_geo_x+col_geo_w}" y2="{py}" stroke="black" stroke-width="0.5"/>'
+
+        elif type_ == "mutterboden":
+            # Gras Symbole (Weiß)
+            step_x = 15
+            step_y = 10
+            for py in range(int(y_pos), int(y_pos + h), step_y):
+                for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step_x):
+                    # Kleines "v" zeichnen
+                    if px + 6 < col_geo_x + col_geo_w:
+                        pattern_group += f'<path d="M{px},{py} L{px+3},{py+4} L{px+6},{py}" fill="none" stroke="white" stroke-width="1"/>'
+
+        elif type_ == "auffuellung":
+            # Diagonale Linien
+            # Einfache Approximation: Linien zeichnen
+            step = 10
+            # Das ist etwas komplexer inline zu clippen, wir zeichnen einfache schräge Striche
+            for i in range(0, int(col_geo_w + h), step):
+                # Start unten links nach oben rechts
+                # x1, y1 = col_geo_x + i, y_pos + h
+                # x2, y2 = col_geo_x + i + h, y_pos
+                # Clipping ist hier schwer ohne defs. 
+                # Wir nutzen stattdessen ein einfaches Pattern von oben links
+                pass # Diagonal ist inline schwer sauber zu lösen ohne über den Rand zu malen.
+                # Fallback: Wir lassen Auffüllung grau ohne Striche oder nutzen kleine Striche
+                
+        svg += pattern_group
+        
+        # Text Label
         label = r.get('f', '')
         text_col = "white" if fill_color == "#5D4037" else "black"
-        svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10" fill="{text_col}">{label}</text>'
+        svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{y_pos + h/2}" font-family="Arial" font-size="10" fill="{text_col}">{label}</text>'
         
         last_d = r['Bis_m']
         
-    # Technik
+    # Technik Ausbau
     for _, r in df_ring.iterrows():
         y = start_y + r['Von']*scale_y
         h = (r['Bis'] - r['Von']) * scale_y
