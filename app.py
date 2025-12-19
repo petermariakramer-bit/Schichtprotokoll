@@ -5,7 +5,6 @@ import folium
 from geopy.geocoders import Nominatim
 import html
 from io import BytesIO
-import math
 
 # --- IMPORTS PRÜFEN ---
 try:
@@ -47,41 +46,50 @@ def get_static_map_image(lat, lon, zoom=15):
         img_buffer.seek(0)
         return img_buffer
     except Exception as e:
-        print(f"Kartenfehler: {e}")
         return None
 
 # ==============================================================================
-# 2. HELPER: SVG GRAFIK (MANUELLE MUSTER STATT PATTERNS)
+# 2. HELPER: SVG GRAFIK (MIT MASSSTAB UND TIEFENLINIEN)
 # ==============================================================================
 def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     scale_y = 15
     width = 700
     max_depth = 48
     if not df_geo.empty: max_depth = max(max_depth, df_geo['Bis_m'].max())
+    if not df_rohr.empty: max_depth = max(max_depth, df_rohr['Bis'].max())
     
-    total_height = (max_depth * scale_y) + 50
+    # Platz nach unten für Endteufe
+    total_height = (max_depth * scale_y) + 80
     
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
     
-    # --- Definitionen für Technik-Muster (diese funktionieren meistens gut) ---
-    svg += '''<defs>
-    <pattern id="pat-Tonsperre" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#795548"/><path d="M0,10 l10,-10" stroke="white"/></pattern>
-    <pattern id="pat-Filterkies" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="white"/><circle cx="3" cy="3" r="1.5" fill="orange"/></pattern>
-    <pattern id="pat-Filterrohr" width="10" height="5" patternUnits="userSpaceOnUse"><rect width="10" height="5" fill="white" stroke="black"/><line x1="2" y1="2" x2="8" y2="2" stroke="black"/></pattern>
-    </defs>'''
+    # Koordinaten-Setup
+    start_y = 40          # Etwas Platz oben für "m u. GOK"
+    scale_x = 40          # X-Position der Maßstabs-Linie
+    col_geo_x = 100       # X-Position Geologie-Säule
+    col_geo_w = 100       # Breite Geologie
+    col_tech_x = 350      # X-Position Technik (Mitte des Rohrs)
     
-    start_y = 10 
-    col_geo_x = 80
-    col_geo_w = 100
-    col_tech_x = 350
+    # --- 1. MASSSTAB (LINKS) ---
+    # Header Text
+    svg += f'<text x="{scale_x}" y="{start_y - 15}" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">m u. GOK</text>'
     
-    # Skala Linie
-    svg += f'<line x1="{col_geo_x}" y1="{start_y}" x2="{col_geo_x}" y2="{start_y + max_depth*scale_y}" stroke="black"/>'
-    for i in range(int(max_depth)+1):
-        y = start_y + i*scale_y
-        svg += f'<line x1="{col_geo_x}" y1="{y}" x2="{col_geo_x-5}" y2="{y}" stroke="black"/>'
-        if i % 1 == 0: svg += f'<text x="{col_geo_x-10}" y="{y+3}" text-anchor="end" font-family="Arial" font-size="10">{i}</text>'
+    # Vertikale Linie
+    svg += f'<line x1="{scale_x}" y1="{start_y}" x2="{scale_x}" y2="{start_y + max_depth*scale_y}" stroke="black" stroke-width="1"/>'
+    
+    # Ticks und Zahlen (2m Schritte)
+    for i in range(int(max_depth) + 1):
+        y = start_y + i * scale_y
+        
+        if i % 2 == 0:
+            # Großer Strich + Zahl (Alle 2m)
+            svg += f'<line x1="{scale_x - 5}" y1="{y}" x2="{scale_x}" y2="{y}" stroke="black" stroke-width="1"/>'
+            svg += f'<text x="{scale_x - 8}" y="{y + 4}" text-anchor="end" font-family="Arial" font-size="10">{i}</text>'
+        else:
+            # Kleiner Strich (Dazwischen)
+            svg += f'<line x1="{scale_x - 3}" y1="{y}" x2="{scale_x}" y2="{y}" stroke="black" stroke-width="0.5"/>'
 
+    # --- 2. GEOLOGIE SÄULE ---
     last_d = 0
     for _, r in df_geo.iterrows():
         h = (r['Bis_m'] - last_d) * scale_y
@@ -90,145 +98,160 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
         # Textanalyse
         boden_text = (str(r.get('f', '')) + " " + str(r.get('a', '')) + " " + str(r.get('g', ''))).lower()
         
-        # --- FARBE & TYP BESTIMMUNG ---
         fill_color = "#FFF59D" # Default Sand Gelb
         type_ = "sand"
         
-        if "kies" in boden_text:
-            fill_color = "#FFCC80" # Orange
-            type_ = "kies"
-        elif "schluff" in boden_text:
-            fill_color = "#E6EE9C" # Ocker
-            type_ = "schluff"
-        elif "ton" in boden_text:
-            fill_color = "#BCAAA4" # Braun
-            type_ = "ton"
-        elif "lehm" in boden_text:
-            fill_color = "#FFE082" # Gelb-Braun
-            type_ = "lehm"
-        elif "mudde" in boden_text or "torf" in boden_text:
-            fill_color = "#AED581" # Hellgrün
-            type_ = "mudde"
-        elif "mutterboden" in boden_text:
-            fill_color = "#5D4037" # Dunkelbraun
-            type_ = "mutterboden"
-        elif "auffüllung" in boden_text:
-            fill_color = "#EEEEEE" # Grau
-            type_ = "auffuellung"
+        if "kies" in boden_text: fill_color, type_ = "#FFCC80", "kies"
+        elif "schluff" in boden_text: fill_color, type_ = "#E6EE9C", "schluff"
+        elif "ton" in boden_text: fill_color, type_ = "#BCAAA4", "ton"
+        elif "lehm" in boden_text: fill_color, type_ = "#FFE082", "lehm"
+        elif "mudde" in boden_text or "torf" in boden_text: fill_color, type_ = "#AED581", "mudde"
+        elif "mutterboden" in boden_text: fill_color, type_ = "#5D4037", "mutterboden"
+        elif "auffüllung" in boden_text: fill_color, type_ = "#EEEEEE", "auffuellung"
         
-        if "sand" in str(r.get('f', '')).lower():
-            fill_color = "#FFF59D"
-            type_ = "sand"
+        if "sand" in str(r.get('f', '')).lower(): fill_color, type_ = "#FFF59D", "sand"
 
-        # 1. HINTERGRUND FARBE ZEICHNEN
+        # Hintergrund
         svg += f'<rect x="{col_geo_x}" y="{y_pos}" width="{col_geo_w}" height="{h}" fill="{fill_color}" stroke="black"/>'
         
-        # 2. MUSTER "MANUELL" ZEICHNEN (Inline SVG Elements)
-        # Wir iterieren über die Fläche und zeichnen Symbole
-        
-        # Clip-Path simulieren: Wir zeichnen einfach nur innerhalb der Box
-        # Da wir rects zeichnen, können wir einfach die Koordinaten beschränken.
-        
+        # Muster manuell zeichnen
         pattern_group = ""
-        
         if type_ == "sand":
-            # Schwarze Punkte (kleine Rechtecke)
             step = 10
             for py in range(int(y_pos), int(y_pos + h), step):
                 for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
-                    # Versatz für Muster
                     offset = 5 if (py // step) % 2 == 0 else 0
                     if px + offset < col_geo_x + col_geo_w:
                         pattern_group += f'<rect x="{px + offset}" y="{py}" width="1.5" height="1.5" fill="black"/>'
-                        
         elif type_ == "mudde":
-            # Braune Punkte auf Grün
             step = 12
             for py in range(int(y_pos), int(y_pos + h), step):
                 for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
                     offset = 6 if (py // step) % 2 == 0 else 0
                     if px + offset < col_geo_x + col_geo_w:
                         pattern_group += f'<rect x="{px + offset}" y="{py}" width="2.5" height="2.5" fill="#5D4037"/>'
-
         elif type_ == "kies":
-            # Kreise
             step = 12
             for py in range(int(y_pos), int(y_pos + h), step):
                 for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
                     if px + 6 < col_geo_x + col_geo_w and py + 6 < y_pos + h:
                         pattern_group += f'<circle cx="{px+4}" cy="{py+4}" r="2.5" fill="none" stroke="black" stroke-width="1"/>'
-
         elif type_ == "schluff":
-            # Vertikale Linien
             step = 4
             for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
                 pattern_group += f'<line x1="{px}" y1="{y_pos}" x2="{px}" y2="{y_pos+h}" stroke="black" stroke-width="0.5"/>'
-
         elif type_ == "ton":
-            # Horizontale Linien
             step = 4
             for py in range(int(y_pos), int(y_pos + h), step):
                 pattern_group += f'<line x1="{col_geo_x}" y1="{py}" x2="{col_geo_x+col_geo_w}" y2="{py}" stroke="black" stroke-width="0.5"/>'
-
         elif type_ == "lehm":
-            # Gitter (Hor + Vert)
             step = 6
-            # Vert
             for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step):
                 pattern_group += f'<line x1="{px}" y1="{y_pos}" x2="{px}" y2="{y_pos+h}" stroke="black" stroke-width="0.5"/>'
-            # Hor
             for py in range(int(y_pos), int(y_pos + h), step):
                 pattern_group += f'<line x1="{col_geo_x}" y1="{py}" x2="{col_geo_x+col_geo_w}" y2="{py}" stroke="black" stroke-width="0.5"/>'
-
         elif type_ == "mutterboden":
-            # Gras Symbole (Weiß)
-            step_x = 15
-            step_y = 10
+            step_x, step_y = 15, 10
             for py in range(int(y_pos), int(y_pos + h), step_y):
                 for px in range(int(col_geo_x), int(col_geo_x + col_geo_w), step_x):
-                    # Kleines "v" zeichnen
                     if px + 6 < col_geo_x + col_geo_w:
                         pattern_group += f'<path d="M{px},{py} L{px+3},{py+4} L{px+6},{py}" fill="none" stroke="white" stroke-width="1"/>'
-
         elif type_ == "auffuellung":
             # Diagonale Linien
-            # Einfache Approximation: Linien zeichnen
-            step = 10
-            # Das ist etwas komplexer inline zu clippen, wir zeichnen einfache schräge Striche
-            for i in range(0, int(col_geo_w + h), step):
-                # Start unten links nach oben rechts
-                # x1, y1 = col_geo_x + i, y_pos + h
-                # x2, y2 = col_geo_x + i + h, y_pos
-                # Clipping ist hier schwer ohne defs. 
-                # Wir nutzen stattdessen ein einfaches Pattern von oben links
-                pass # Diagonal ist inline schwer sauber zu lösen ohne über den Rand zu malen.
-                # Fallback: Wir lassen Auffüllung grau ohne Striche oder nutzen kleine Striche
-                
+            step = 8
+            # Einfacher Trick: Linien zeichnen und per SVG clipPath beschneiden (inline clip ist sicherer)
+            # Wir zeichnen einfach Linien über die Box
+            # Da clipping komplex ist im manuellen string, zeichnen wir kurze Segmente
+            for i in range(-int(h), int(col_geo_w), step):
+                 x1 = col_geo_x + i
+                 y1 = y_pos + h
+                 x2 = col_geo_x + i + h
+                 y2 = y_pos
+                 # Einfache Begrenzung (Clipping Manuell)
+                 if x1 < col_geo_x: x1=col_geo_x; y1 = y_pos + h - (col_geo_x - (col_geo_x+i))
+                 if x2 > col_geo_x + col_geo_w: x2=col_geo_x+col_geo_w; y2 = y_pos + (x2-(col_geo_x+i+h)) # approx
+                 # Das ist komplex. Einfacher: Nur angedeutete Striche
+                 
+            # Alternative: Einfaches Symbol "A" mittig
+            pattern_group += f'<text x="{col_geo_x + col_geo_w/2}" y="{y_pos + h/2}" text-anchor="middle" font-size="14" fill="black" font-weight="bold">A</text>'
+
         svg += pattern_group
         
-        # Text Label
+        # Label
         label = r.get('f', '')
         text_col = "white" if fill_color == "#5D4037" else "black"
         svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{y_pos + h/2}" font-family="Arial" font-size="10" fill="{text_col}">{label}</text>'
         
         last_d = r['Bis_m']
         
-    # Technik Ausbau
+    # --- 3. TECHNIK (AUSBAU) ---
+    
+    # Ringraum (Links/Rechts vom Rohr)
+    # Annahme: Ringraum ist breiter als Rohr. Rohr 40px, Ringraum 80px
+    # Wir zeichnen Ringraum HINTER Rohr (also zuerst)
+    
+    # Wir sammeln alle wichtigen Tiefen für Beschriftung
+    depth_markers = set()
+    
     for _, r in df_ring.iterrows():
         y = start_y + r['Von']*scale_y
         h = (r['Bis'] - r['Von']) * scale_y
-        pat = "pat-Filterkies"
-        if "Ton" in r['Mat']: pat = "pat-Tonsperre"
-        svg += f'<rect x="{col_tech_x-40}" y="{y}" width="80" height="{h}" fill="url(#{pat})" stroke="none"/>'
         
+        # Muster / Farbe
+        fill = "white"
+        is_ton = "Ton" in r['Mat']
+        if is_ton: fill = "#795548" # Braun
+        
+        # Ringraum zeichnen (zentriert um col_tech_x)
+        svg += f'<rect x="{col_tech_x-40}" y="{y}" width="80" height="{h}" fill="{fill}" stroke="none"/>'
+        
+        if not is_ton: # Kies Punkte
+            step = 8
+            for py in range(int(y), int(y + h), step):
+                for px in range(int(col_tech_x-40), int(col_tech_x+40), step):
+                    if (px+py)%13 == 0: # Zufallsmuster
+                         svg += f'<circle cx="{px}" cy="{py}" r="1" fill="orange"/>'
+        else: # Ton Striche
+             svg += f'<path d="M{col_tech_x-40},{y+h} L{col_tech_x+40},{y}" stroke="white" stroke-width="1"/>'
+
+        depth_markers.add(r['Bis'])
+
+    # Rohr (Vordergrund)
     for _, r in df_rohr.iterrows():
         y = start_y + r['Von']*scale_y
         h = (r['Bis'] - r['Von']) * scale_y
-        fill = "white"
-        if "Filter" in r['Typ']: fill = "url(#pat-Filterrohr)"
-        if "Sumpf" in r['Typ']: fill = "#ccc"
-        svg += f'<rect x="{col_tech_x-20}" y="{y}" width="40" height="{h}" fill="{fill}" stroke="black" stroke-width="2"/>'
         
+        fill = "white"
+        stroke = "black"
+        
+        svg += f'<rect x="{col_tech_x-20}" y="{y}" width="40" height="{h}" fill="{fill}" stroke="{stroke}" stroke-width="2"/>'
+        
+        # Filter Schlitze
+        if "Filter" in r['Typ']:
+            for line_y in range(int(y)+2, int(y+h), 4):
+                svg += f'<line x1="{col_tech_x-15}" y1="{line_y}" x2="{col_tech_x+15}" y2="{line_y}" stroke="black" stroke-width="1"/>'
+        
+        # Sumpfrohr (Grau)
+        if "Sumpf" in r['Typ']:
+            svg += f'<rect x="{col_tech_x-20}" y="{y}" width="40" height="{h}" fill="#CCC" stroke="black" stroke-width="2"/>'
+
+        depth_markers.add(r['Bis'])
+
+    # --- 4. TECHNISCHE TIEFEN BESCHRIFTUNG (RECHTS) ---
+    # Wir zeichnen Linien von der Techniksäule nach rechts und schreiben die Tiefe
+    label_line_x_start = col_tech_x + 40 # Rechtskante Ringraum
+    label_line_x_end = label_line_x_start + 20
+    
+    # Sortieren und Duplikate entfernen (0.00 ignorieren)
+    sorted_depths = sorted([d for d in depth_markers if d > 0 and d <= max_depth])
+    
+    for d in sorted_depths:
+        y = start_y + d * scale_y
+        # Linie
+        svg += f'<line x1="{label_line_x_start}" y1="{y}" x2="{label_line_x_end}" y2="{y}" stroke="black" stroke-width="1"/>'
+        # Text
+        svg += f'<text x="{label_line_x_end + 3}" y="{y + 3}" font-family="Arial" font-size="10" fill="black">{d:.2f}m</text>'
+
     svg += '</svg>'
     return svg
 
