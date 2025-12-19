@@ -31,7 +31,7 @@ if 'lon' not in st.session_state: st.session_state.lon = 13.1905
 st.title("🕳️ Bohrprotokoll & Schichtenverzeichnis")
 
 # ==============================================================================
-# 1. HELPER: KARTEN & SVG
+# 1. HELPER
 # ==============================================================================
 def get_static_map_image(lat, lon, zoom=15):
     if not HAS_STATICMAP: return None
@@ -47,15 +47,13 @@ def get_static_map_image(lat, lon, zoom=15):
     except: return None
 
 def generate_svg_string(df_geo, df_rohr, df_ring, meta):
-    # (SVG Code bleibt gleich wie vorher - Kurzfassung)
     scale_y = 15
     width = 700
     max_depth = 48
     if not df_geo.empty: max_depth = max(max_depth, df_geo['Bis_m'].max())
-    total_height = 50 + (max_depth * scale_y) + 50 # Header im SVG selbst reduziert, da jetzt im PDF Header
+    total_height = 50 + (max_depth * scale_y) + 50
     
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
-    # ... Patterns ...
     svg += '''<defs>
     <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#fffacd"/><circle cx="2" cy="2" r="1" fill="gold"/><circle cx="7" cy="7" r="1" fill="gold"/></pattern>
     <pattern id="pat-Mudde" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#ddd"/><path d="M0,5 h10" stroke="black" stroke-width="2"/></pattern>
@@ -66,12 +64,11 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     <pattern id="pat-Filterrohr" width="10" height="5" patternUnits="userSpaceOnUse"><rect width="10" height="5" fill="white" stroke="black"/><line x1="2" y1="2" x2="8" y2="2" stroke="black"/></pattern>
     </defs>'''
     
-    start_y = 20 # Weniger Platz oben, da Header jetzt im PDF ist
+    start_y = 20
     col_geo_x = 80
     col_geo_w = 100
     col_tech_x = 350
     
-    # Skala
     svg += f'<line x1="{col_geo_x}" y1="{start_y}" x2="{col_geo_x}" y2="{start_y + max_depth*scale_y}" stroke="black"/>'
     for i in range(int(max_depth)+1):
         y = start_y + i*scale_y
@@ -108,88 +105,91 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     return svg
 
 # ==============================================================================
-# 2. PDF HEADER FUNKTION (DAS IST NEU!)
+# 2. PDF HEADER FUNKTION (NEUES LAYOUT)
 # ==============================================================================
 
 def draw_header_on_page(canvas, doc):
-    """
-    Zeichnet den festen Header auf jede Seite.
-    Layout basiert auf 'Schichtenverzeichnis.pdf'.
-    """
     canvas.saveState()
-    
-    # Metadaten aus dem Doc-Objekt holen (dort speichern wir sie gleich)
     meta = doc.meta_data 
     
-    # Abmessungen Header
     page_width, page_height = A4
     margin_left = 2*cm
     margin_right = 2*cm
-    header_top = page_height - 1*cm
-    header_bottom = page_height - 4.5*cm # Der Header ist ca 3.5cm hoch
-    width = page_width - margin_left - margin_right
     
-    # 1. Rahmen um den Header
+    # --- NEUE BREITEN DEFINITION ---
+    # Gesamtbreite verfügbar: 21cm - 4cm = 17cm
+    box_w_firma = 3.5 * cm      # Schmaler (vorher 4cm)
+    box_w_akten = 4.0 * cm      # Schmaler (vorher 5cm)
+    # Der mittlere Kasten nimmt den Rest automatisch
+    
+    # Y-Positionen
+    header_top = page_height - 1*cm
+    header_bottom = page_height - 4.5*cm 
+    row_line_y = header_bottom + 1.2*cm
+    
+    # X-Positionen der Trennlinien
+    x_line_1 = margin_left + box_w_firma
+    x_line_2 = page_width - margin_right - box_w_akten
+    
+    # 1. Rahmen
     canvas.setStrokeColor(colors.black)
     canvas.setLineWidth(1)
-    # Rechteck für den ganzen Header
-    canvas.rect(margin_left, header_bottom, width, header_top - header_bottom)
+    canvas.rect(margin_left, header_bottom, page_width - margin_left - margin_right, header_top - header_bottom)
     
-    # 2. Vertikale Trennlinien
-    # Linie 1: Trennt Logo (links) von Titel (mitte)
-    canvas.line(margin_left + 4*cm, header_bottom, margin_left + 4*cm, header_top)
-    # Linie 2: Trennt Titel (mitte) von Aktenzeichen (rechts)
-    canvas.line(page_width - margin_right - 5*cm, header_bottom, page_width - margin_right - 5*cm, header_top)
-    
-    # 3. Horizontale Trennlinie (für untere Zeile: Ort, Datum etc.)
-    row_line_y = header_bottom + 1.2*cm
-    canvas.line(margin_left, row_line_y, page_width - margin_right, row_line_y)
+    # 2. Trennlinien
+    canvas.line(x_line_1, header_bottom, x_line_1, header_top) # Links
+    canvas.line(x_line_2, header_bottom, x_line_2, header_top) # Rechts
+    canvas.line(margin_left, row_line_y, page_width - margin_right, row_line_y) # Horizontal
     
     # --- INHALT ---
     
-    # A) LOGO BEREICH (Oben Links)
+    # A) FIRMA (Links)
     canvas.setFont("Helvetica-Bold", 14)
-    canvas.setFillColor(colors.green) # Bohr2000 ist grün im Original
+    canvas.setFillColor(colors.green)
     canvas.drawString(margin_left + 0.2*cm, header_top - 0.6*cm, "Bohr2000")
     
     canvas.setFont("Helvetica-Bold", 10)
     canvas.setFillColor(colors.black)
+    # Textumbruch falls Firmenname zu lang
+    if len(meta['firma']) > 15: canvas.setFont("Helvetica-Bold", 8)
     canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
     
-    # B) TITEL BEREICH (Oben Mitte)
+    # B) TITEL (Mitte) - Exakt zentriert zwischen den Linien
+    center_x = x_line_1 + (x_line_2 - x_line_1) / 2
+    
     canvas.setFont("Helvetica-Bold", 12)
-    canvas.drawCentredString(page_width/2, header_top - 0.6*cm, "Schichtenverzeichnis / Bohrprofil")
+    canvas.drawCentredString(center_x, header_top - 0.6*cm, "Schichtenverzeichnis / Bohrprofil")
     canvas.setFont("Helvetica", 9)
-    canvas.drawCentredString(page_width/2, header_top - 1.0*cm, "nach DIN 4022 / DIN 4023")
-    canvas.drawCentredString(page_width/2, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
+    canvas.drawCentredString(center_x, header_top - 1.0*cm, "nach DIN 4022 / DIN 4023")
+    canvas.drawCentredString(center_x, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
     
-    # C) RECHTS BEREICH (Aktenzeichen)
+    # C) AKTENZEICHEN (Rechts)
+    # Text eingerückt ab der Trennlinie
+    text_x_right = x_line_2 + 0.2*cm
+    
     canvas.setFont("Helvetica", 9)
-    canvas.drawString(page_width - margin_right - 4.8*cm, header_top - 0.6*cm, "Aktenzeichen:")
+    canvas.drawString(text_x_right, header_top - 0.6*cm, "Aktenzeichen:")
     canvas.setFont("Helvetica-Bold", 10)
-    canvas.drawString(page_width - margin_right - 4.8*cm, header_top - 1.0*cm, meta['aktenzeichen'])
+    canvas.drawString(text_x_right, header_top - 1.0*cm, meta['aktenzeichen'])
     
     canvas.setFont("Helvetica", 9)
-    canvas.drawString(page_width - margin_right - 4.8*cm, header_top - 1.5*cm, "Archiv-Nr:")
+    canvas.drawString(text_x_right, header_top - 1.5*cm, "Archiv-Nr:")
     
-    # D) UNTERE ZEILE (Projektinfos)
-    # Links: Ort & Bohrung
+    # D) UNTERE ZEILE
     text_y_row = row_line_y - 0.4*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(margin_left + 0.2*cm, text_y_row, f"Ort: {meta['ort']}")
     canvas.drawString(margin_left + 0.2*cm, text_y_row - 0.4*cm, f"Bohrung: {meta['projekt']}")
     
-    # Rechts: Datum
-    # Wir brauchen noch eine kleine vertikale Linie unten rechts für das Datum
-    canvas.line(page_width - margin_right - 5*cm, header_bottom, page_width - margin_right - 5*cm, row_line_y)
+    # Trennlinie für Datum (aligned mit oberer Linie)
+    canvas.line(x_line_2, header_bottom, x_line_2, row_line_y)
     
-    canvas.drawString(page_width - margin_right - 4.8*cm, text_y_row, "Datum:")
-    canvas.drawString(page_width - margin_right - 4.8*cm, text_y_row - 0.4*cm, meta['datum'])
-
-    # E) Seitenzahl (Unten im Footer oder oben im Header)
-    # Im Original steht "Anlage 1, Blatt X". Wir setzen es rechts oben in die Ecke der unteren Zeile
+    canvas.drawString(text_x_right, text_y_row, "Datum:")
+    canvas.drawString(text_x_right, text_y_row - 0.4*cm, meta['datum'])
+    
+    # Blatt Nr.
     page_num = doc.page
-    canvas.drawRightString(page_width - margin_right - 5.2*cm, text_y_row - 0.2*cm, f"Blatt {page_num}")
+    canvas.drawRightString(page_width - margin_right - 0.2*cm, text_y_row - 0.2*cm, f"Blatt {page_num}")
 
     canvas.restoreState()
 
@@ -199,13 +199,9 @@ def draw_header_on_page(canvas, doc):
 
 def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, map_image_buffer):
     buffer = BytesIO()
-    
-    # WICHTIG: topMargin muss groß genug sein (4.5cm), damit der Header Platz hat!
     doc = SimpleDocTemplate(buffer, pagesize=A4, 
                             rightMargin=2*cm, leftMargin=2*cm, 
                             topMargin=5*cm, bottomMargin=2*cm)
-    
-    # Metadaten an das Doc hängen, damit die Header-Funktion sie lesen kann
     doc.meta_data = meta
     
     story = []
@@ -213,9 +209,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     style_h2 = styles['Heading2']
     style_norm = styles['Normal']
     
-    # --- SEITE 1: STAMMDATEN & KARTE ---
-    # Kein eigener Header im Story-Flow mehr nötig, da draw_header_on_page das macht!
-    
+    # Seite 1 Inhalt
     story.append(Paragraph("Stammdaten Übersicht", style_h2))
     
     data_stamm = [
@@ -241,23 +235,19 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         img.drawWidth = 14*cm
         story.append(img)
     else:
-        story.append(Paragraph("(Keine Karte verfügbar)", style_norm))
+        story.append(Paragraph("(Keine Karte)", style_norm))
         
     story.append(PageBreak())
     
-    # --- SEITE 2: SCHICHTENVERZEICHNIS ---
-    # Header erscheint hier automatisch
+    # Seite 2
     table_headers = ["Tiefe bis", "Bodenart", "Zusatz", "Farbe", "Kalk", "Gruppe", "Bemerkung"]
     table_data = [table_headers]
     for _, row in df_geo.iterrows():
-        # Zeilenumbruch mit Paragraph
         table_data.append([
             f"{row['Bis_m']:.2f}",
             Paragraph(str(row['Benennung']), style_norm),
             Paragraph(str(row['Zusatz']), style_norm),
-            row['Farbe'],
-            row['Kalk'],
-            row['Gruppe'],
+            row['Farbe'], row['Kalk'], row['Gruppe'],
             Paragraph(str(row['Bemerkung']), style_norm)
         ])
     
@@ -271,28 +261,23 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t_geo)
     story.append(PageBreak())
     
-    # --- SEITE 3: GRAFIK ---
-    # Auch hier erscheint der Header automatisch
+    # Seite 3 (Grafik)
     if svg_bytes:
         try:
             drawing = svg2rlg(BytesIO(svg_bytes.encode('utf-8')))
-            # Skalieren auf Seitenbreite
             avail_width = 460
             factor = avail_width / drawing.width
             drawing.width = drawing.width * factor
             drawing.height = drawing.height * factor
             drawing.scale(factor, factor)
             story.append(drawing)
-        except:
-            story.append(Paragraph("Fehler beim Grafik-Import", style_norm))
+        except: pass
 
-    # PDF bauen mit Header-Callback
     doc.build(story, onFirstPage=draw_header_on_page, onLaterPages=draw_header_on_page)
     return buffer.getvalue()
 
-
 # ==============================================================================
-# 4. GUI & EINGABE
+# 4. GUI
 # ==============================================================================
 
 with st.expander("1. Kopfblatt & Standort", expanded=True):
@@ -304,9 +289,7 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         if st.button("📍 Adresse suchen"):
             try:
                 loc = Nominatim(user_agent="app").geocode(ort)
-                if loc:
-                    st.session_state.lat, st.session_state.lon = loc.latitude, loc.longitude
-                    st.success("Gefunden!")
+                if loc: st.session_state.lat, st.session_state.lon = loc.latitude, loc.longitude
             except: pass
 
         c1, c2 = st.columns(2)
