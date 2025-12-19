@@ -7,6 +7,9 @@ import html
 from io import BytesIO
 import time
 
+# --- NEU: StaticMap für PDF-Kartenbilder ---
+from staticmap import StaticMap, CircleMarker as StaticCircleMarker
+
 # --- REPORTLAB IMPORTS FÜR PDF ---
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -25,7 +28,32 @@ if 'lon' not in st.session_state: st.session_state.lon = 13.1905
 st.title("🕳️ Bohrprotokoll & Schichtenverzeichnis (DIN 4022/4023)")
 
 # ==============================================================================
-# 1. EINGABE MASKE
+# 1. HELPER: STATISCHE KARTE GENERIEREN
+# ==============================================================================
+def get_static_map_image(lat, lon, zoom=15):
+    """Erstellt ein PNG-Bild der Karte für das PDF."""
+    try:
+        # Breite/Höhe in Pixeln für das generierte Bild
+        m = StaticMap(width=800, height=400, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
+        
+        # Roter Punkt Marker (Achtung: staticmap nutzt lon, lat)
+        marker = StaticCircleMarker((lon, lat), 'red', 18) # 18px Radius
+        m.add_marker(marker)
+        
+        # Bild rendern
+        image = m.render(zoom=zoom)
+        
+        # In BytesIO speichern, damit ReportLab es lesen kann
+        img_buffer = BytesIO()
+        image.save(img_buffer, format='PNG')
+        img_buffer.seek(0)
+        return img_buffer
+    except Exception as e:
+        print(f"Fehler bei Karten-Generierung: {e}")
+        return None
+
+# ==============================================================================
+# 2. EINGABE MASKE
 # ==============================================================================
 
 with st.expander("1. Kopfblatt & Standort (Seite 1)", expanded=True):
@@ -52,7 +80,6 @@ with st.expander("1. Kopfblatt & Standort (Seite 1)", expanded=True):
         bohrfirma = c2.text_input("Bohrunternehmer", value="Ackermann KG")
         
         c3, c4 = st.columns(2)
-        # Datum als String handhaben für freie Eingabe oder Datepicker
         datum_str = c3.text_input("Bohrzeitraum", value="06.10.25 - 08.10.25")
         aktenzeichen = c4.text_input("Aktenzeichen", value="V26645")
         
@@ -62,14 +89,13 @@ with st.expander("1. Kopfblatt & Standort (Seite 1)", expanded=True):
         bohrverfahren = st.text_input("Bohrverfahren", value="Spülbohren, Ø 330mm")
 
     with col_map:
-        st.subheader("Lageplan")
+        st.subheader("Lageplan (Interaktiv)")
         m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16)
         folium.CircleMarker([st.session_state.lat, st.session_state.lon], radius=8, color="red", fill=True, fill_color="red").add_to(m)
         st_folium(m, width="100%", height=350)
-        st.caption("Hinweis: Die Karte wird im PDF als Platzhalter eingefügt.")
+        st.info("Diese Ansicht ist interaktiv. Im PDF wird automatisch ein statisches Bild dieser Position generiert.")
 
 with st.expander("2. Schichtenverzeichnis (Seite 2 & 3)", expanded=True):
-    # Standardwerte wie im PDF
     default_geologie = [
         {"Bis_m": 14.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Farbe": "braun", "Konsistenz": "erdfeucht", "Gruppe": "SE", "Kalk": "0", "Bemerkung": "schwer zu bohren"},
         {"Bis_m": 29.00, "Benennung": "Mudde", "Zusatz": "organisch", "Farbe": "dunkelbraun", "Konsistenz": "steif", "Gruppe": "SU*-TL", "Kalk": "+", "Bemerkung": ""},
@@ -111,10 +137,10 @@ with st.expander("3. Ausbau & Wasserstände (Seite 4)", expanded=True):
         df_ring = st.data_editor(pd.DataFrame(default_ring), num_rows="dynamic", use_container_width=True, key="ring_input")
 
 # ==============================================================================
-# 2. PDF GENERIERUNG (LOGIK)
+# 3. PDF GENERIERUNG
 # ==============================================================================
 
-def create_multipage_pdf(meta, df_geo, df_rohr, df_ring, svg_bytes):
+def create_multipage_pdf(meta, df_geo, df_rohr, df_ring, svg_bytes, map_image_buffer):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
     
@@ -128,10 +154,10 @@ def create_multipage_pdf(meta, df_geo, df_rohr, df_ring, svg_bytes):
     # --- SEITE 1: KOPFBLATT ---
     
     # Titelblock
-    story.append(Paragraph("Bohr2000", style_h2)) # Fake Logo Text
+    story.append(Paragraph("Bohr2000", style_h2)) 
     story.append(Paragraph(f"<b>{meta['firma']}</b>", style_h1))
     story.append(Paragraph("Kopfblatt zum Schichtenverzeichnis", style_h2))
-    story.append(Spacer(1, 1*cm))
+    story.append(Spacer(1, 0.5*cm))
     
     # Stammdaten Tabelle
     data_stammdaten = [
@@ -152,25 +178,30 @@ def create_multipage_pdf(meta, df_geo, df_rohr, df_ring, svg_bytes):
         ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
     ]))
     story.append(t_stamm)
-    story.append(Spacer(1, 1*cm))
+    story.append(Spacer(1, 0.5*cm))
     
-    # Karte Platzhalter (Box)
+    # --- KARTE EINFÜGEN ---
     story.append(Paragraph("Lageplan:", style_h2))
-    data_map = [[Paragraph("<br/><br/>(Hier würde der Kartenausschnitt stehen)<br/>Automatische Karteneinbindung in PDF erfordert externe API-Keys.<br/><br/>", style_norm)]]
-    t_map = Table(data_map, colWidths=[15*cm], rowHeights=[6*cm])
-    t_map.setStyle(TableStyle([
-        ('BOX', (0,0), (-1,-1), 1, colors.black),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BACKGROUND', (0,0), (-1,-1), colors.lightgrey),
-    ]))
-    story.append(t_map)
+    
+    if map_image_buffer:
+        # Bild aus Speicher laden
+        img = RLImage(map_image_buffer)
+        
+        # Bildgröße anpassen (z.B. max 16cm breit)
+        img_width = 16 * cm
+        aspect = img.imageHeight / float(img.imageWidth)
+        img.drawHeight = img_width * aspect
+        img.drawWidth = img_width
+        
+        story.append(img)
+    else:
+        story.append(Paragraph("(Kartenbild konnte nicht geladen werden)", style_norm))
+        
     story.append(Spacer(1, 1*cm))
     
     # Zusammenfassung Ausbau (Tabelle unten Seite 1)
     story.append(Paragraph("Kurzzusammenfassung Ausbau:", style_h2))
     
-    # Wir bauen eine Tabelle aus den Rohr/Ringdaten
     ausbau_data = [["Art", "Von (m)", "Bis (m)", "Details"]]
     for _, r in df_rohr.iterrows():
         ausbau_data.append([r['Typ'], f"{r['Von']:.2f}", f"{r['Bis']:.2f}", f"DN {r['DN']}"])
@@ -192,13 +223,10 @@ def create_multipage_pdf(meta, df_geo, df_rohr, df_ring, svg_bytes):
     story.append(Paragraph(f"Schichtenverzeichnis: {meta['projekt']}", style_h2))
     story.append(Spacer(1, 0.5*cm))
     
-    # Tabelle Header analog PDF
-    # Spalten: Tiefe, Benennung, Zusatz, Farbe, Kalk, Gruppe, Bemerkung
     table_headers = ["Bis m", "Hauptbodenart", "Beschreibung / Zusatz", "Farbe", "Kalk", "Gruppe", "Bemerkung"]
     table_data = [table_headers]
     
     for _, row in df_geo.iterrows():
-        # Textumbruch in Zellen via Paragraph
         p_benennung = Paragraph(str(row['Benennung']), style_norm)
         p_zusatz = Paragraph(str(row['Zusatz']), style_norm)
         p_bem = Paragraph(str(row['Bemerkung']), style_norm)
@@ -230,45 +258,31 @@ def create_multipage_pdf(meta, df_geo, df_rohr, df_ring, svg_bytes):
     story.append(Paragraph("Zeichnerische Darstellung nach DIN 4023", style_h2))
     story.append(Spacer(1, 0.5*cm))
     
-    # SVG einfügen
     if svg_bytes:
         try:
-            # SVG Byte String in ReportLab Drawing konvertieren
             drawing = svg2rlg(BytesIO(svg_bytes.encode('utf-8')))
-            
-            # Skalierung prüfen: SVG könnte zu groß für A4 sein
-            # A4 Breite ca 595 Punkte (Points). Ränder sind je 2cm (~56 pt).
-            # Verfügbare Breite ca 480 pt.
-            
-            # Wir skalieren das Drawing so, dass es auf die Seite passt
             avail_width = 480
             factor = avail_width / drawing.width
             drawing.width = drawing.width * factor
             drawing.height = drawing.height * factor
             drawing.scale(factor, factor)
-            
             story.append(drawing)
         except Exception as e:
             story.append(Paragraph(f"Fehler beim Rendern der Grafik: {e}", style_norm))
     
-    # PDF Bauen
     doc.build(story)
     return buffer.getvalue()
 
-# ==============================================================================
-# 3. SVG GENERATOR (Wie vorher, aber angepasst für svglib Kompatibilität)
-# ==============================================================================
+
 def generate_svg_string(df_geo, df_rohr, df_ring, meta):
-    # (Dieser Code ist fast identisch zum vorherigen, nur sichergestellt dass er hier definiert ist)
     scale_y = 15
     width = 700
-    max_depth = 48 # Fix oder dynamisch
+    max_depth = 48
     if not df_geo.empty: max_depth = max(max_depth, df_geo['Bis_m'].max())
-    
     total_height = 200 + (max_depth * scale_y) + 100
     
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
-    # ... (Kurzfassung der Patterns aus Platzgründen, nimm die vollen Patterns von vorhin) ...
+    # Kurzversion der Patterns (bitte die langen aus der vorherigen Version übernehmen, falls nötig)
     svg += '''<defs>
     <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#fffacd"/><circle cx="2" cy="2" r="1" fill="gold"/><circle cx="7" cy="7" r="1" fill="gold"/></pattern>
     <pattern id="pat-Mudde" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#ddd"/><path d="M0,5 h10" stroke="black" stroke-width="2"/></pattern>
@@ -279,12 +293,11 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     <pattern id="pat-Filterrohr" width="10" height="5" patternUnits="userSpaceOnUse"><rect width="10" height="5" fill="white" stroke="black"/><line x1="2" y1="2" x2="8" y2="2" stroke="black"/></pattern>
     </defs>'''
     
-    # Header im SVG (Wird auch auf Seite 4 gedruckt)
+    # Header
     svg += f'<rect x="10" y="10" width="{width-20}" height="150" fill="none" stroke="black"/>'
     svg += f'<text x="30" y="40" font-family="Arial" font-size="20" font-weight="bold" fill="green">Bohr2000</text>'
     svg += f'<text x="30" y="70" font-family="Arial" font-size="16">{html.escape(meta["firma"])}</text>'
     
-    # Inhalt Zeichnen
     start_y = 180
     col_geo_x = 80
     col_geo_w = 100
@@ -305,12 +318,11 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
         if "Mudde" in r['Benennung']: pat = "pat-Mudde"
         if "Mergel" in r['Benennung']: pat = "pat-Mergel"
         if "Mutterboden" in r['Benennung']: pat = "pat-Mutterboden"
-        
         svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="url(#{pat})" stroke="black"/>'
         svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10">{r["Benennung"]}</text>'
         last_d = r['Bis_m']
         
-    # Ausbau Ringraum (vereinfacht als Hintergrund)
+    # Ausbau
     for _, r in df_ring.iterrows():
         y = start_y + r['Von']*scale_y
         h = (r['Bis'] - r['Von']) * scale_y
@@ -318,7 +330,6 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
         if "Ton" in r['Mat']: pat = "pat-Tonsperre"
         svg += f'<rect x="{col_tech_x-40}" y="{y}" width="80" height="{h}" fill="url(#{pat})" stroke="none"/>'
         
-    # Ausbau Rohre
     for _, r in df_rohr.iterrows():
         y = start_y + r['Von']*scale_y
         h = (r['Bis'] - r['Von']) * scale_y
@@ -343,19 +354,20 @@ meta_data = {
     "verfahren": bohrverfahren, "ansatz": ansatzpunkt, "teufe": endteufe
 }
 
-# SVG String bauen
 svg_str = generate_svg_string(df_geo, df_rohr, df_ring, meta_data)
 
-# Vorschau SVG
 st.subheader("Vorschau: Anlage Grafik (Seite 4)")
 st.components.v1.html(svg_str, height=600, scrolling=True)
 
-# PDF Generierung
 st.subheader("Finaler Download")
 if st.button("📄 Gesamt-PDF erstellen (Seite 1-4)"):
-    with st.spinner("PDF wird generiert..."):
+    with st.spinner("Generiere PDF inkl. Karte..."):
         try:
-            pdf_bytes = create_multipage_pdf(meta_data, df_geo, df_rohr, df_ring, svg_str)
+            # 1. Kartenbild generieren
+            map_buffer = get_static_map_image(st.session_state.lat, st.session_state.lon)
+            
+            # 2. PDF bauen (Karte übergeben)
+            pdf_bytes = create_multipage_pdf(meta_data, df_geo, df_rohr, df_ring, svg_str, map_buffer)
             
             st.success("Erfolgreich erstellt!")
             st.download_button(
@@ -366,4 +378,3 @@ if st.button("📄 Gesamt-PDF erstellen (Seite 1-4)"):
             )
         except Exception as e:
             st.error(f"Fehler bei PDF Generierung: {e}")
-            st.info("Tipp: Überprüfe die 'packages.txt' und 'requirements.txt' wenn du Fehler mit svglib/reportlab hast.")
