@@ -128,7 +128,7 @@ def draw_header_on_page(canvas, doc):
     x_line_1 = margin_left + box_w_firma
     x_line_2 = page_width - margin_right - box_w_akten
     
-    # GRAU HINTERGRUND
+    # GRAU HINTERGRUND FÜR LOGO
     canvas.setFillColor(colors.whitesmoke)
     canvas.rect(margin_left, row_line_y, box_w_firma, header_top - row_line_y, fill=1, stroke=0)
     
@@ -165,7 +165,7 @@ def draw_header_on_page(canvas, doc):
         canvas.setFillColor(colors.black)
         canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
     
-    # TEXTE
+    # TITEL
     center_x = x_line_1 + (x_line_2 - x_line_1) / 2
     canvas.setFillColor(colors.black)
     canvas.setFont("Helvetica-Bold", 12)
@@ -174,6 +174,7 @@ def draw_header_on_page(canvas, doc):
     canvas.drawCentredString(center_x, header_top - 1.0*cm, "nach DIN 4022 / DIN 4023")
     canvas.drawCentredString(center_x, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
     
+    # AKTENZEICHEN
     text_x_right = x_line_2 + 0.2*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 0.6*cm, "Aktenzeichen:")
@@ -182,6 +183,7 @@ def draw_header_on_page(canvas, doc):
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 1.5*cm, "Archiv-Nr:")
     
+    # UNTERE ZEILE
     text_y_row = row_line_y - 0.4*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(margin_left + 0.2*cm, text_y_row, f"Ort: {meta['ort']}")
@@ -213,7 +215,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     style_tab_bold = ParagraphStyle('TabBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     
     style_geo_norm = ParagraphStyle('GeoNorm', parent=styles['Normal'], fontSize=7, leading=8)
-    style_geo_header = ParagraphStyle('GeoHeader', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=1)
+    style_geo_header = ParagraphStyle('GeoHeader', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=1) # centered
     
     page_width, _ = A4
     available_width = page_width - 4*cm
@@ -285,9 +287,41 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         
     story.append(PageBreak())
     
-    # --- SEITE 2: SCHICHTENVERZEICHNIS (6-SPALTEN LAYOUT) ---
+    # --- SEITE 2: SCHICHTENVERZEICHNIS (VERSCHACHTELTE STRUKTUR) ---
     
-    # Header Zeile 1
+    # BREITEN DEFINITION FÜR SPALTE 2 (Die innere Tabelle)
+    # Gesamtbreite Spalte 2 ca. 9cm
+    # Wir haben 4 Unterspalten: c/f, d/g, e/h, i
+    w_inner = [2.5*cm, 2.5*cm, 2.5*cm, 1.5*cm] 
+    
+    # --- HELPER: NESTED TABLE GENERATOR ---
+    def create_nested_desc_table(a, b, c, d, e, f, g, h, i, is_header=False):
+        # Wenn Header, dann fett
+        s = style_geo_header if is_header else style_geo_norm
+        
+        # Inhalt
+        data = [
+            [Paragraph(f"{a}", s)], # Zeile 1: a (span 4)
+            [Paragraph(f"{b}", s)], # Zeile 2: b (span 4)
+            [Paragraph(f"{c}", s), Paragraph(f"{d}", s), Paragraph(f"{e}", s), ''], # Zeile 3: c, d, e (span 2)
+            [Paragraph(f"{f}", s), Paragraph(f"{g}", s), Paragraph(f"{h}", s), Paragraph(f"{i}", s)] # Zeile 4: f, g, h, i
+        ]
+        
+        t = Table(data, colWidths=w_inner)
+        t.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('SPAN', (0,0), (-1,0)), # a spant über alle 4
+            ('SPAN', (0,1), (-1,1)), # b spant über alle 4
+            ('SPAN', (2,2), (3,2)),  # e spant über die letzten 2 (e und i spalte)
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 2),
+            ('RIGHTPADDING', (0,0), (-1,-1), 2),
+            ('TOPPADDING', (0,0), (-1,-1), 1),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+        ]))
+        return t
+
+    # Header Zeile 1 (Nummerierung)
     h_row1 = [
         Paragraph("1", style_geo_header), 
         Paragraph("2", style_geo_header), 
@@ -297,70 +331,73 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         Paragraph("6", style_geo_header)
     ]
     
-    # Header Zeile 2 (Spalte 2 enthält die komplette Legende)
-    header_col2_text = """a) Benennung der Bodenart<br/>
-    b) Ergänzende Bemerkung<br/>
-    c) Beschaffenheit nach Bohrgut<br/>
-    d) Beschaffenheit nach Bohrvorgang<br/>
-    e) Farbe<br/>
-    f) Übliche Benennung<br/>
-    g) Geologische Benennung<br/>
-    h) Gruppe<br/>
-    i) Kalkgehalt"""
+    # Header Zeile 2 (Die komplexe Struktur)
+    nested_header = create_nested_desc_table(
+        "a) Benennung der Bodenart und Beimengungen",
+        "b) Ergänzende Bemerkung",
+        "c) Beschaffenheit<br/>nach Bohrgut",
+        "d) Beschaffenheit<br/>nach Bohrvorgang",
+        "e) Farbe",
+        "f) Übliche<br/>Benennung",
+        "g) Geologische<br/>Benennung",
+        "h) Gruppe",
+        "i) Kalk-<br/>gehalt",
+        is_header=True
+    )
     
     h_row2 = [
-        Paragraph("Bis<br/>... m", style_geo_header),
-        Paragraph(header_col2_text, style_geo_norm),
-        Paragraph("Bemerkungen<br/>Sonderprobe<br/>Wasserführung", style_geo_norm),
-        Paragraph("Probe<br/>Art", style_geo_norm),
-        Paragraph("Probe<br/>Nr", style_geo_norm),
-        Paragraph("Probe<br/>Tiefe (m)", style_geo_norm)
+        Paragraph("Bis<br/>... m<br/>unter<br/>Ansatz-<br/>punkt", style_geo_header),
+        nested_header, # HIER KOMMT DIE NESTED TABLE REIN
+        Paragraph("Bemerkungen<br/>Sonderprobe<br/>Wasserführung<br/>Bohrwerkzeuge<br/>Kernverlust<br/>Sonstiges", style_geo_norm),
+        Paragraph("Art", style_geo_norm),
+        Paragraph("Nr", style_geo_norm),
+        Paragraph("Tiefe<br/>in m<br/>(Unter-<br/>kante)", style_geo_norm)
     ]
     
     table_data = [h_row1, h_row2]
     
     for _, row in df_geo.iterrows():
-        # Inhalt Spalte 2 (Alles a-i)
-        col2_text = ""
-        if row['a']: col2_text += f"a) {row['a']}<br/>"
-        if row['b']: col2_text += f"b) {row['b']}<br/>"
-        if row['c']: col2_text += f"c) {row['c']}<br/>"
-        if row['d']: col2_text += f"d) {row['d']}<br/>"
-        if row['e']: col2_text += f"e) {row['e']}<br/>"
-        if row['f']: col2_text += f"f) {row['f']}<br/>"
-        if row['g']: col2_text += f"g) {row['g']}<br/>"
-        if row['h']: col2_text += f"h) {row['h']}<br/>"
-        if row['i']: col2_text += f"i) {row['i']}"
+        # Datensätze vorbereiten
+        txt_a = f"a) {row['a']}" if row['a'] else "a)"
+        txt_b = f"b) {row['b']}" if row['b'] else "b)"
+        txt_c = f"c) {row['c']}" if row['c'] else "c)"
+        txt_d = f"d) {row['d']}" if row['d'] else "d)"
+        txt_e = f"e) {row['e']}" if row['e'] else "e)"
+        txt_f = f"f) {row['f']}" if row['f'] else "f)"
+        txt_g = f"g) {row['g']}" if row['g'] else "g)"
+        txt_h = f"h) {row['h']}" if row['h'] else "h)"
+        txt_i = f"i) {row['i']}" if row['i'] else "i)"
         
-        # Proben Daten (falls leer, nichts anzeigen)
-        p_art = str(row['p_art']) if row['p_art'] else ""
-        p_nr = str(row['p_nr']) if row['p_nr'] else ""
+        # Nested Table für die Datenzeile erstellen
+        nested_data = create_nested_desc_table(txt_a, txt_b, txt_c, txt_d, txt_e, txt_f, txt_g, txt_h, txt_i)
+        
+        # Proben Daten
         p_tiefe = f"{row['p_tiefe']:.2f}" if row['p_tiefe'] > 0 else ""
         
         table_data.append([
             Paragraph(f"{row['Bis_m']:.2f}", style_geo_norm),
-            Paragraph(col2_text, style_geo_norm),
+            nested_data, # NESTED TABLE ALS DATENZELLE
             Paragraph(str(row['Bemerkung']), style_geo_norm),
-            Paragraph(p_art, style_geo_norm),
-            Paragraph(p_nr, style_geo_norm),
+            Paragraph(str(row['p_art']), style_geo_norm),
+            Paragraph(str(row['p_nr']), style_geo_norm),
             Paragraph(p_tiefe, style_geo_norm)
         ])
     
-    # Breiten anpassen für 6 Spalten (Summe ca 17cm)
-    # 1: 1.5, 2: 8.5 (sehr breit), 3: 3.5, 4: 1.5, 5: 1.0, 6: 1.5 = ~17.5cm
-    col_widths = [1.5*cm, 8.5*cm, 3.5*cm, 1.5*cm, 1.0*cm, 1.5*cm]
+    # Haupt-Spaltenbreiten
+    # Die Breite von Spalte 2 ist die Summe der inneren Breiten (9cm)
+    col_widths = [1.5*cm, sum(w_inner), 3.5*cm, 1.0*cm, 1.0*cm, 1.5*cm]
     
     t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
     t_geo.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('ALIGN', (0,0), (5,0), 'CENTER'),
-        ('BACKGROUND', (0,0), (-1,1), colors.lightgrey),
-        ('LEFTPADDING', (0,0), (-1,-1), 2),
-        ('RIGHTPADDING', (0,0), (-1,-1), 2),
-        ('TOPPADDING', (0,0), (-1,-1), 2),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'), # Wichtig: Oben ausrichten
+        ('ALIGN', (0,0), (0,-1), 'CENTER'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0), # Padding weg, damit Nested Table bündig sitzt
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        # Header (Row 2) Styling spezifisch
+        ('BACKGROUND', (0,1), (-1,1), colors.white),
     ]))
     story.append(t_geo)
     story.append(PageBreak())
