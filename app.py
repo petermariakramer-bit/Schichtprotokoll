@@ -193,6 +193,7 @@ with col_right:
     
     if not edited_df.empty:
         # SVG erstellen
+        # Hinweis: Wir übergeben ein leeres Dummy-Dict, falls du meta_data noch nicht gelöscht hast
         svg_string = generate_svg(edited_df, meta_data)
         
         # Anzeigen
@@ -201,13 +202,14 @@ with col_right:
         st.divider()
         st.subheader("Export")
         
-        # 1. SVG Download (immer verfügbar)
+        # Nur SVG Download
         st.download_button(
             label="📥 SVG herunterladen (Vektor)",
             data=svg_string,
             file_name=f"{project_name}_Profil.svg",
             mime="image/svg+xml"
         )
+        st.info("Tipp: Die SVG-Datei kann in jedem Browser (Chrome, Edge) geöffnet und von dort perfekt als PDF gedruckt werden (Strg+P).")
         
         # 2. PDF Download (Nur wenn Bibliotheken da sind)
         if HAS_PDF_LIBS:
