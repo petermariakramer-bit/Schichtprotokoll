@@ -1,3 +1,63 @@
+```python
+import pandas as pd
+
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+
+# Read the CSV file into a DataFrame
+df = pd.read_csv('din.xlsx - Tabelle1.csv')
+
+# Display the first 5 rows
+print(df.head().to_markdown(index=False, numalign="left", stralign="left"))
+
+# Print the column names and their data types
+print(df.info())
+
+
+```
+
+```text
+| Bodenart   | Kurzzeichen (DIN)   | Schraffur / Muster (DIN 4023)                           | Typische Farbe (SEP 3 / Praxis)            |
+|:-----------|:--------------------|:--------------------------------------------------------|:-------------------------------------------|
+| Sand       | S                   | Punkte (dicht oder locker, je nach Lagerung)            | Gelb                                       |
+| Kies       | G                   | Kreise oder Ovale (Größe variiert oft mit Korn)         | Orange oder Braun-Orange                   |
+| Schluff    | U                   | Senkrechte Striche (eng stehend)                        | Ocker, Hellbraun oder Grün (v.a. bei Löss) |
+| Ton        | T                   | Waagerechte Striche/Strichelung                         | Braun (oft Mittel- bis Dunkelbraun)        |
+| Lehm       | (Gemisch)           | Gitterstruktur (Kombination aus senkrecht + waagerecht) | Braun-Gelb-Mischungen                      |
+<class 'pandas.core.frame.DataFrame'>
+RangeIndex: 9 entries, 0 to 8
+Data columns (total 4 columns):
+ #   Column                           Non-Null Count  Dtype 
+---  ------                           --------------  ----- 
+ 0   Bodenart                         9 non-null      object
+ 1   Kurzzeichen (DIN)                9 non-null      object
+ 2   Schraffur / Muster (DIN 4023)    9 non-null      object
+ 3   Typische Farbe (SEP 3 / Praxis)  9 non-null      object
+dtypes: object(4)
+memory usage: 416.0+ bytes
+None
+
+
+```
+
+Das ist eine hervorragende Konkretisierung. Mit diesen Vorgaben können wir die SVG-Patterns (Muster) viel genauer an die DIN 4023 anlehnen.
+
+Ich habe die Funktion `generate_svg_string` komplett überarbeitet, um diese neuen Definitionen (Farben und Muster) zu integrieren.
+
+**Die Neuerungen:**
+
+1. **Sand (S):** Gelber Hintergrund (`#FFF59D`) mit gepunktetem Muster.
+2. **Kies (G):** Oranger Hintergrund (`#FFCC80`) mit Kreis-Muster.
+3. **Schluff (U):** Ockerfarbener Hintergrund (`#E6EE9C`) mit vertikaler Schraffur.
+4. **Ton (T):** Brauner Hintergrund (`#BCAAA4`) mit horizontaler Schraffur.
+5. **Lehm:** Gelb-Brauner Hintergrund (`#FFE082`) mit Gittermuster.
+6. **Mudde/Torf (F/H):** Dunkler Hintergrund (`#8D6E63`) mit spezieller "Dach"-Schraffur (simuliert).
+7. **Mutterboden (Mu):** Sehr dunkler Hintergrund (`#5D4037`) mit angedeutetem "Gras"-Symbol.
+8. **Auffüllung (A):** Grauer Hintergrund (`#EEEEEE`) mit diagonaler Schraffur.
+
+Hier ist der **finale Code** für Ihre `app.py` mit den angepassten Grafiken:
+
+```python
 import streamlit as st
 import pandas as pd
 from streamlit_folium import st_folium
@@ -56,12 +116,42 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     total_height = (max_depth * scale_y) + 50
     
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
+    
+    # --- DEFINITIONEN NACH DIN VORGABEN ---
     svg += '''<defs>
-    <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#fffacd"/><circle cx="2" cy="2" r="1" fill="gold"/><circle cx="7" cy="7" r="1" fill="gold"/></pattern>
-    <pattern id="pat-Mudde" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#ddd"/><path d="M0,5 h10" stroke="black" stroke-width="2"/></pattern>
-    <pattern id="pat-Mergel" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#eee"/><path d="M0,0 l10,10 m0,-10 l-10,10" stroke="#555"/></pattern>
-    <pattern id="pat-Mutterboden" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#5c4033"/></pattern>
-    <pattern id="pat-Tonsperre" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="brown"/><path d="M0,10 l10,-10" stroke="white"/></pattern>
+    <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse">
+        <rect width="10" height="10" fill="#FFF59D"/> <circle cx="2" cy="2" r="1" fill="#FBC02D"/>
+        <circle cx="7" cy="7" r="1" fill="#FBC02D"/>
+    </pattern>
+    
+    <pattern id="pat-Kies" width="12" height="12" patternUnits="userSpaceOnUse">
+        <rect width="12" height="12" fill="#FFCC80"/> <circle cx="6" cy="6" r="3" fill="none" stroke="#E65100" stroke-width="1"/>
+    </pattern>
+    
+    <pattern id="pat-Schluff" width="6" height="6" patternUnits="userSpaceOnUse">
+        <rect width="6" height="6" fill="#E6EE9C"/> <line x1="3" y1="0" x2="3" y2="6" stroke="#827717" stroke-width="1"/>
+    </pattern>
+    
+    <pattern id="pat-Ton" width="6" height="6" patternUnits="userSpaceOnUse">
+        <rect width="6" height="6" fill="#BCAAA4"/> <line x1="0" y1="3" x2="6" y2="3" stroke="#5D4037" stroke-width="1"/>
+    </pattern>
+    
+    <pattern id="pat-Lehm" width="8" height="8" patternUnits="userSpaceOnUse">
+        <rect width="8" height="8" fill="#FFE082"/> <path d="M4,0 L4,8 M0,4 L8,4" stroke="#F57F17" stroke-width="1"/>
+    </pattern>
+    
+    <pattern id="pat-Mudde" width="10" height="10" patternUnits="userSpaceOnUse">
+        <rect width="10" height="10" fill="#8D6E63"/> <line x1="5" y1="0" x2="5" y2="10" stroke="#3E2723" stroke-width="1"/>
+        <path d="M2,3 L8,3" stroke="#3E2723" stroke-width="1"/> </pattern>
+    
+    <pattern id="pat-Mutterboden" width="10" height="10" patternUnits="userSpaceOnUse">
+        <rect width="10" height="10" fill="#5D4037"/> <path d="M2,2 L5,5 L8,2" fill="none" stroke="#FFFFFF" stroke-width="1"/> </pattern>
+    
+    <pattern id="pat-Auffuellung" width="10" height="10" patternUnits="userSpaceOnUse">
+        <rect width="10" height="10" fill="#EEEEEE"/> <path d="M0,10 L10,0" stroke="#9E9E9E" stroke-width="1"/>
+    </pattern>
+
+    <pattern id="pat-Tonsperre" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#795548"/><path d="M0,10 l10,-10" stroke="white"/></pattern>
     <pattern id="pat-Filterkies" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="white"/><circle cx="3" cy="3" r="1.5" fill="orange"/></pattern>
     <pattern id="pat-Filterrohr" width="10" height="5" patternUnits="userSpaceOnUse"><rect width="10" height="5" fill="white" stroke="black"/><line x1="2" y1="2" x2="8" y2="2" stroke="black"/></pattern>
     </defs>'''
@@ -81,15 +171,32 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     for _, r in df_geo.iterrows():
         h = (r['Bis_m'] - last_d) * scale_y
         
-        boden = str(r.get('f', '')).lower() + str(r.get('a', '')).lower()
-        pat = "pat-Sand"
-        if "mudde" in boden: pat = "pat-Mudde"
-        if "mergel" in boden: pat = "pat-Mergel"
-        if "mutterboden" in boden: pat = "pat-Mutterboden"
+        # Intelligente Muster-Auswahl
+        # Wir prüfen alle relevanten Spalten auf Schlüsselwörter
+        text_content = (str(r.get('f', '')) + " " + str(r.get('a', '')) + " " + str(r.get('g', ''))).lower()
         
+        pat = "pat-Sand" # Default
+        
+        if "kies" in text_content: pat = "pat-Kies"
+        if "schluff" in text_content: pat = "pat-Schluff"
+        if "ton" in text_content: pat = "pat-Ton"
+        if "lehm" in text_content: pat = "pat-Lehm"
+        if "mudde" in text_content or "torf" in text_content or "organ" in text_content: pat = "pat-Mudde"
+        if "mutterboden" in text_content: pat = "pat-Mutterboden"
+        if "auffüllung" in text_content: pat = "pat-Auffuellung"
+        
+        # Priorität für Sand zurücksetzen, falls "sand" nur als "feinsandig" im Schluff vorkommt? 
+        # Hier vereinfacht: Wenn "Sand" das Hauptwort in f) ist, dann Sand.
+        if "sand" in str(r.get('f', '')).lower(): pat = "pat-Sand"
+
         svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="url(#{pat})" stroke="black"/>'
+        
         label = r.get('f', '')
-        svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10">{label}</text>'
+        # Textfarbe anpassen für dunkle Hintergründe
+        text_fill = "black"
+        if pat in ["pat-Mutterboden", "pat-Mudde", "pat-Ton"]: text_fill = "white"
+            
+        svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10" fill="black">{label}</text>'
         last_d = r['Bis_m']
         
     for _, r in df_ring.iterrows():
@@ -214,7 +321,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     style_geo_norm = ParagraphStyle('GeoNorm', parent=styles['Normal'], fontSize=7, leading=8)
     style_geo_header = ParagraphStyle('GeoHeader', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=1) # centered
     
-    # NEU: Stil für die Tiefenzahlen (zentriert)
     style_geo_center = ParagraphStyle('GeoCenter', parent=styles['Normal'], fontName='Helvetica', fontSize=7, leading=8, alignment=1)
     
     page_width, _ = A4
@@ -308,8 +414,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             ('SPAN', (0,1), (-1,1)), 
             ('SPAN', (2,2), (3,2)),  
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            # NEU: LEFTPADDING ERHÖHT (6) FÜR SPALTEN 3,4,5,6 (entspricht inneren spalten)
-            ('LEFTPADDING', (0,0), (-1,-1), 6), 
+            ('LEFTPADDING', (0,0), (-1,-1), 6), # PADDING ERHÖHT
             ('RIGHTPADDING', (0,0), (-1,-1), 2),
             ('TOPPADDING', (0,0), (-1,-1), 1),
             ('BOTTOMPADDING', (0,0), (-1,-1), 1),
@@ -366,8 +471,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         p_tiefe = f"{row['p_tiefe']:.2f}" if row['p_tiefe'] > 0 else ""
         
         table_data.append([
-            # NEU: style_geo_center verwenden für zentrierte Zahl
-            Paragraph(f"{row['Bis_m']:.2f}", style_geo_center),
+            Paragraph(f"{row['Bis_m']:.2f}", style_geo_center), # Zentriert
             nested_data, 
             Paragraph(str(row['Bemerkung']), style_geo_norm),
             Paragraph(str(row['p_art']), style_geo_norm),
@@ -375,7 +479,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             Paragraph(p_tiefe, style_geo_norm)
         ])
     
-    # HAUPT-SPALTENBREITEN (SUMME EXAKT 17cm)
+    # HAUPT-SPALTENBREITEN
     col_widths = [1.5*cm, sum(w_inner), 3.0*cm, 1.2*cm, 1.0*cm, 1.3*cm]
     
     t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
@@ -519,3 +623,5 @@ if st.button("📄 PDF mit Logo erstellen"):
     map_buf = get_static_map_image(st.session_state.lat, st.session_state.lon)
     pdf = create_multipage_pdf_with_header(meta_data, df_geo, df_rohr, df_ring, svg_str, map_buf)
     st.download_button("📥 PDF Download", pdf, "Bohrprotokoll.pdf", "application/pdf")
+
+```
