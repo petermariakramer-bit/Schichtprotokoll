@@ -1,63 +1,3 @@
-```python
-import pandas as pd
-
-pd.set_option('display.max_rows', None)
-pd.set_option('display.max_columns', None)
-
-# Read the CSV file into a DataFrame
-df = pd.read_csv('din.xlsx - Tabelle1.csv')
-
-# Display the first 5 rows
-print(df.head().to_markdown(index=False, numalign="left", stralign="left"))
-
-# Print the column names and their data types
-print(df.info())
-
-
-```
-
-```text
-| Bodenart   | Kurzzeichen (DIN)   | Schraffur / Muster (DIN 4023)                           | Typische Farbe (SEP 3 / Praxis)            |
-|:-----------|:--------------------|:--------------------------------------------------------|:-------------------------------------------|
-| Sand       | S                   | Punkte (dicht oder locker, je nach Lagerung)            | Gelb                                       |
-| Kies       | G                   | Kreise oder Ovale (Größe variiert oft mit Korn)         | Orange oder Braun-Orange                   |
-| Schluff    | U                   | Senkrechte Striche (eng stehend)                        | Ocker, Hellbraun oder Grün (v.a. bei Löss) |
-| Ton        | T                   | Waagerechte Striche/Strichelung                         | Braun (oft Mittel- bis Dunkelbraun)        |
-| Lehm       | (Gemisch)           | Gitterstruktur (Kombination aus senkrecht + waagerecht) | Braun-Gelb-Mischungen                      |
-<class 'pandas.core.frame.DataFrame'>
-RangeIndex: 9 entries, 0 to 8
-Data columns (total 4 columns):
- #   Column                           Non-Null Count  Dtype 
----  ------                           --------------  ----- 
- 0   Bodenart                         9 non-null      object
- 1   Kurzzeichen (DIN)                9 non-null      object
- 2   Schraffur / Muster (DIN 4023)    9 non-null      object
- 3   Typische Farbe (SEP 3 / Praxis)  9 non-null      object
-dtypes: object(4)
-memory usage: 416.0+ bytes
-None
-
-
-```
-
-Das ist eine hervorragende Konkretisierung. Mit diesen Vorgaben können wir die SVG-Patterns (Muster) viel genauer an die DIN 4023 anlehnen.
-
-Ich habe die Funktion `generate_svg_string` komplett überarbeitet, um diese neuen Definitionen (Farben und Muster) zu integrieren.
-
-**Die Neuerungen:**
-
-1. **Sand (S):** Gelber Hintergrund (`#FFF59D`) mit gepunktetem Muster.
-2. **Kies (G):** Oranger Hintergrund (`#FFCC80`) mit Kreis-Muster.
-3. **Schluff (U):** Ockerfarbener Hintergrund (`#E6EE9C`) mit vertikaler Schraffur.
-4. **Ton (T):** Brauner Hintergrund (`#BCAAA4`) mit horizontaler Schraffur.
-5. **Lehm:** Gelb-Brauner Hintergrund (`#FFE082`) mit Gittermuster.
-6. **Mudde/Torf (F/H):** Dunkler Hintergrund (`#8D6E63`) mit spezieller "Dach"-Schraffur (simuliert).
-7. **Mutterboden (Mu):** Sehr dunkler Hintergrund (`#5D4037`) mit angedeutetem "Gras"-Symbol.
-8. **Auffüllung (A):** Grauer Hintergrund (`#EEEEEE`) mit diagonaler Schraffur.
-
-Hier ist der **finale Code** für Ihre `app.py` mit den angepassten Grafiken:
-
-```python
 import streamlit as st
 import pandas as pd
 from streamlit_folium import st_folium
@@ -97,7 +37,8 @@ st.title("🕳️ Bohrprotokoll & Schichtenverzeichnis")
 def get_static_map_image(lat, lon, zoom=15):
     if not HAS_STATICMAP: return None
     try:
-        m = StaticMap(width=1000, height=500, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
+        # Breite etwas höher rendern für gute Qualität
+        m = StaticMap(width=1000, height=500, url_template='[http://a.tile.openstreetmap.org/](http://a.tile.openstreetmap.org/){z}/{x}/{y}.png')
         marker = StaticCircleMarker((lon, lat), 'red', 18)
         m.add_marker(marker)
         image = m.render(zoom=zoom)
@@ -115,9 +56,9 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     
     total_height = (max_depth * scale_y) + 50
     
-    svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
+    svg = f'<svg width="{width}" height="{total_height}" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)">'
     
-    # --- DEFINITIONEN NACH DIN VORGABEN ---
+    # --- DEFINITIONEN NACH DIN VORGABEN (angepasst an CSV) ---
     svg += '''<defs>
     <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse">
         <rect width="10" height="10" fill="#FFF59D"/> <circle cx="2" cy="2" r="1" fill="#FBC02D"/>
@@ -171,8 +112,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     for _, r in df_geo.iterrows():
         h = (r['Bis_m'] - last_d) * scale_y
         
-        # Intelligente Muster-Auswahl
-        # Wir prüfen alle relevanten Spalten auf Schlüsselwörter
+        # Intelligente Muster-Auswahl basierend auf Eingaben
         text_content = (str(r.get('f', '')) + " " + str(r.get('a', '')) + " " + str(r.get('g', ''))).lower()
         
         pat = "pat-Sand" # Default
@@ -185,17 +125,13 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
         if "mutterboden" in text_content: pat = "pat-Mutterboden"
         if "auffüllung" in text_content: pat = "pat-Auffuellung"
         
-        # Priorität für Sand zurücksetzen, falls "sand" nur als "feinsandig" im Schluff vorkommt? 
-        # Hier vereinfacht: Wenn "Sand" das Hauptwort in f) ist, dann Sand.
+        # Priorität: Wenn f) explizit Sand ist
         if "sand" in str(r.get('f', '')).lower(): pat = "pat-Sand"
 
         svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="url(#{pat})" stroke="black"/>'
         
+        # Beschriftung in Grafik
         label = r.get('f', '')
-        # Textfarbe anpassen für dunkle Hintergründe
-        text_fill = "black"
-        if pat in ["pat-Mutterboden", "pat-Mudde", "pat-Ton"]: text_fill = "white"
-            
         svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10" fill="black">{label}</text>'
         last_d = r['Bis_m']
         
@@ -234,10 +170,11 @@ def draw_header_on_page(canvas, doc):
     x_line_1 = margin_left + box_w_firma
     x_line_2 = page_width - margin_right - box_w_akten
     
-    # GRAU HINTERGRUND FÜR LOGO
+    # GRAUER HINTERGRUND FÜR LOGO
     canvas.setFillColor(colors.whitesmoke)
     canvas.rect(margin_left, row_line_y, box_w_firma, header_top - row_line_y, fill=1, stroke=0)
     
+    # RAHMEN UND LINIEN
     canvas.setStrokeColor(colors.black)
     canvas.setLineWidth(1)
     canvas.rect(margin_left, header_bottom, page_width - margin_left - margin_right, header_top - header_bottom, fill=0, stroke=1)
@@ -271,7 +208,7 @@ def draw_header_on_page(canvas, doc):
         canvas.setFillColor(colors.black)
         canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
     
-    # TEXTE
+    # TITEL
     center_x = x_line_1 + (x_line_2 - x_line_1) / 2
     canvas.setFillColor(colors.black)
     canvas.setFont("Helvetica-Bold", 12)
@@ -280,6 +217,7 @@ def draw_header_on_page(canvas, doc):
     canvas.drawCentredString(center_x, header_top - 1.0*cm, "nach DIN 4022 / DIN 4023")
     canvas.drawCentredString(center_x, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
     
+    # AKTENZEICHEN
     text_x_right = x_line_2 + 0.2*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 0.6*cm, "Aktenzeichen:")
@@ -288,6 +226,7 @@ def draw_header_on_page(canvas, doc):
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 1.5*cm, "Archiv-Nr:")
     
+    # UNTERE ZEILE
     text_y_row = row_line_y - 0.4*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(margin_left + 0.2*cm, text_y_row, f"Ort: {meta['ort']}")
@@ -315,12 +254,12 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story = []
     styles = getSampleStyleSheet()
     
+    # STYLES
     style_tab_norm = ParagraphStyle('TabNorm', parent=styles['Normal'], fontSize=8, leading=10)
     style_tab_bold = ParagraphStyle('TabBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     
     style_geo_norm = ParagraphStyle('GeoNorm', parent=styles['Normal'], fontSize=7, leading=8)
     style_geo_header = ParagraphStyle('GeoHeader', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=1) # centered
-    
     style_geo_center = ParagraphStyle('GeoCenter', parent=styles['Normal'], fontName='Helvetica', fontSize=7, leading=8, alignment=1)
     
     page_width, _ = A4
@@ -371,6 +310,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t2)
     story.append(Spacer(1, 0.5*cm))
     
+    # Karte mit Rahmen
     if map_image_buffer:
         img = RLImage(map_image_buffer)
         img_width = available_width
@@ -393,7 +333,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         
     story.append(PageBreak())
     
-    # --- SEITE 2: SCHICHTENVERZEICHNIS (VERSCHACHTELTE STRUKTUR MIT EXAKTER BREITE) ---
+    # --- SEITE 2: SCHICHTENVERZEICHNIS (VERSCHACHTELT) ---
     
     # Gesamtbreite = 17cm
     w_inner = [2.5*cm, 2.5*cm, 2.5*cm, 1.5*cm] 
@@ -414,7 +354,8 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             ('SPAN', (0,1), (-1,1)), 
             ('SPAN', (2,2), (3,2)),  
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (-1,-1), 6), # PADDING ERHÖHT
+            # PADDING ERHÖHT
+            ('LEFTPADDING', (0,0), (-1,-1), 6), 
             ('RIGHTPADDING', (0,0), (-1,-1), 2),
             ('TOPPADDING', (0,0), (-1,-1), 1),
             ('BOTTOMPADDING', (0,0), (-1,-1), 1),
@@ -471,7 +412,8 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         p_tiefe = f"{row['p_tiefe']:.2f}" if row['p_tiefe'] > 0 else ""
         
         table_data.append([
-            Paragraph(f"{row['Bis_m']:.2f}", style_geo_center), # Zentriert
+            # ZENTRIERT
+            Paragraph(f"{row['Bis_m']:.2f}", style_geo_center),
             nested_data, 
             Paragraph(str(row['Bemerkung']), style_geo_norm),
             Paragraph(str(row['p_art']), style_geo_norm),
@@ -479,7 +421,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             Paragraph(p_tiefe, style_geo_norm)
         ])
     
-    # HAUPT-SPALTENBREITEN
+    # HAUPT-SPALTENBREITEN (1.5 + 9.0 + 3.0 + 1.2 + 1.0 + 1.3 = 17.0cm)
     col_widths = [1.5*cm, sum(w_inner), 3.0*cm, 1.2*cm, 1.0*cm, 1.3*cm]
     
     t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
@@ -623,5 +565,3 @@ if st.button("📄 PDF mit Logo erstellen"):
     map_buf = get_static_map_image(st.session_state.lat, st.session_state.lon)
     pdf = create_multipage_pdf_with_header(meta_data, df_geo, df_rohr, df_ring, svg_str, map_buf)
     st.download_button("📥 PDF Download", pdf, "Bohrprotokoll.pdf", "application/pdf")
-
-```
