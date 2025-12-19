@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
 
 # Bibliotheken für PDF Konvertierung
 try:
