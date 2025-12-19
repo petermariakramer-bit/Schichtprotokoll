@@ -80,12 +80,19 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     last_d = 0
     for _, r in df_geo.iterrows():
         h = (r['Bis_m'] - last_d) * scale_y
+        
+        # Muster Auswahl basierend auf f) Übliche Benennung oder a)
+        boden = str(r.get('f', '')).lower() + str(r.get('a', '')).lower()
         pat = "pat-Sand"
-        if "Mudde" in r['Benennung']: pat = "pat-Mudde"
-        if "Mergel" in r['Benennung']: pat = "pat-Mergel"
-        if "Mutterboden" in r['Benennung']: pat = "pat-Mutterboden"
+        if "mudde" in boden: pat = "pat-Mudde"
+        if "mergel" in boden: pat = "pat-Mergel"
+        if "mutterboden" in boden: pat = "pat-Mutterboden"
+        
         svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="url(#{pat})" stroke="black"/>'
-        svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10">{r["Benennung"]}</text>'
+        
+        # Text im Profil: f) Übliche Benennung
+        label = r.get('f', '')
+        svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10">{label}</text>'
         last_d = r['Bis_m']
         
     for _, r in df_ring.iterrows():
@@ -129,7 +136,6 @@ def draw_header_on_page(canvas, doc):
     
     canvas.setStrokeColor(colors.black)
     canvas.setLineWidth(1)
-    
     canvas.rect(margin_left, header_bottom, page_width - margin_left - margin_right, header_top - header_bottom, fill=0, stroke=1)
     canvas.line(margin_left, row_line_y, page_width - margin_right, row_line_y) 
     canvas.line(x_line_1, row_line_y, x_line_1, header_top) 
@@ -209,12 +215,8 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     
     style_tab_norm = ParagraphStyle('TabNorm', parent=styles['Normal'], fontSize=8, leading=10)
     style_tab_bold = ParagraphStyle('TabBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
-    
-    # Kleinerer Stil für die Schichten-Tabelle
     style_geo_norm = ParagraphStyle('GeoNorm', parent=styles['Normal'], fontSize=7, leading=8)
-    style_geo_bold = ParagraphStyle('GeoBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8)
-    style_geo_header = ParagraphStyle('GeoHeader', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=1) # Center
-    
+    style_geo_header = ParagraphStyle('GeoHeader', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=1)
     style_h2 = styles['Heading2']
     
     page_width, _ = A4
@@ -223,7 +225,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     col2_width = available_width - col1_width
     
     # --- SEITE 1 ---
-    
     data_block1 = [
         [Paragraph("Bohrung:", style_tab_bold), Paragraph(meta['projekt'], style_tab_norm)],
         [Paragraph("Ort:", style_tab_bold), Paragraph(meta['ort'], style_tab_norm)],
@@ -272,7 +273,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         aspect = img.imageHeight / float(img.imageWidth)
         img.drawWidth = img_width
         img.drawHeight = img_width * aspect
-        
         t_map = Table([[img]], colWidths=[available_width])
         t_map.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.black),
@@ -289,10 +289,9 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         
     story.append(PageBreak())
     
-    # --- SEITE 2: SCHICHTENVERZEICHNIS (NACH DIN 4022 STRUKTUR) ---
+    # --- SEITE 2: SCHICHTENVERZEICHNIS (NEUE EINGABE SPALTEN a-i) ---
     
-    # DIN Header Definition (Spalten 1-6)
-    # Zeile 1: Nummern
+    # Header Zeile 1
     h_row1 = [
         Paragraph("1", style_geo_header), 
         Paragraph("2", style_geo_header), 
@@ -301,49 +300,51 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         Paragraph("5", style_geo_header), 
         Paragraph("6", style_geo_header)
     ]
-    
-    # Zeile 2: Hauptbeschriftung
+    # Header Zeile 2
     h_row2 = [
         Paragraph("Bis<br/>... m<br/>unter<br/>Ansatz-<br/>punkt", style_geo_header),
-        Paragraph("a) Benennung der Bodenart<br/>und Beimengungen<br/>b) Ergänzende Bemerkung<br/>c) Beschaffenheit (Bohrgut)<br/>d) Beschaffenheit (Bohrvorgang)<br/>f) Übliche Benennung<br/>g) Geologische Benennung", style_geo_norm),
+        Paragraph("a) Benennung der Bodenart und Beimengungen<br/>b) Ergänzende Bemerkung<br/>c) Beschaffenheit (Bohrgut)<br/>d) Beschaffenheit (Bohrvorgang)<br/>f) Übliche Benennung<br/>g) Geologische Benennung", style_geo_norm),
         Paragraph("e) Farbe<br/><br/>h) Gruppe", style_geo_norm),
         Paragraph("i) Kalk-<br/>gehalt", style_geo_norm),
         Paragraph("Bemerkungen<br/>Sonderprobe<br/>Wasserführung<br/>Bohrwerkzeuge<br/>Kernverlust<br/>Sonstiges", style_geo_norm),
         Paragraph("Entnommene Proben<br/>Tiefe in m<br/>Art / Nr", style_geo_norm)
     ]
     
-    # Datenzeilen
     table_data = [h_row1, h_row2]
     
     for _, row in df_geo.iterrows():
-        # Text zusammenbauen für Spalte 2 (DIN Beschreibung)
-        text_col2 = f"<b>a) {row['Benennung']}, {row['Zusatz']}</b><br/>"
-        if row['Konsistenz']: text_col2 += f"c) {row['Konsistenz']}<br/>"
+        # Inhalt Spalte 2 zusammenbauen aus a, b, c, d, f, g
+        col2_text = ""
+        if row['a']: col2_text += f"a) {row['a']}<br/>"
+        if row['b']: col2_text += f"b) {row['b']}<br/>"
+        if row['c']: col2_text += f"c) {row['c']}<br/>"
+        if row['d']: col2_text += f"d) {row['d']}<br/>"
+        if row['f']: col2_text += f"f) {row['f']}<br/>"
+        if row['g']: col2_text += f"g) {row['g']}"
         
-        # Text für Spalte 3 (Farbe/Gruppe)
-        text_col3 = f"e) {row['Farbe']}<br/><br/>h) {row['Gruppe']}"
+        # Inhalt Spalte 3 (e, h)
+        col3_text = ""
+        if row['e']: col3_text += f"e) {row['e']}<br/><br/>"
+        if row['h']: col3_text += f"h) {row['h']}"
         
-        # Zeile hinzufügen
         table_data.append([
-            Paragraph(f"{row['Bis_m']:.2f}", style_geo_norm), # Spalte 1
-            Paragraph(text_col2, style_geo_norm),             # Spalte 2
-            Paragraph(text_col3, style_geo_norm),             # Spalte 3
-            Paragraph(f"i) {row['Kalk']}", style_geo_norm),   # Spalte 4
-            Paragraph(str(row['Bemerkung']), style_geo_norm), # Spalte 5
-            Paragraph("", style_geo_norm)                     # Spalte 6 (Leer)
+            Paragraph(f"{row['Bis_m']:.2f}", style_geo_norm),
+            Paragraph(col2_text, style_geo_norm),
+            Paragraph(col3_text, style_geo_norm),
+            Paragraph(f"i) {row['i']}" if row['i'] else "", style_geo_norm),
+            Paragraph(str(row['Bemerkung']), style_geo_norm),
+            Paragraph("", style_geo_norm)
         ])
     
-    # Spaltenbreiten definieren (Gesamtbreite ca. 17cm)
-    # 1: Tiefe, 2: Text (breit), 3: Farbe/Grp, 4: Kalk, 5: Bem, 6: Proben
+    # Breiten
     col_widths = [1.5*cm, 6.5*cm, 2.5*cm, 1.5*cm, 3.0*cm, 2.0*cm]
-    
     t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
     t_geo.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('ALIGN', (0,0), (5,0), 'CENTER'), # Header zentriert
-        ('BACKGROUND', (0,0), (-1,1), colors.lightgrey), # Header grau
+        ('ALIGN', (0,0), (5,0), 'CENTER'),
+        ('BACKGROUND', (0,0), (-1,1), colors.lightgrey),
         ('LEFTPADDING', (0,0), (-1,-1), 2),
         ('RIGHTPADDING', (0,0), (-1,-1), 2),
         ('TOPPADDING', (0,0), (-1,-1), 2),
@@ -421,18 +422,29 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         folium.CircleMarker([st.session_state.lat, st.session_state.lon], radius=8, color="red", fill=True, fill_color="red").add_to(m)
         st_folium(m, height=350)
 
-with st.expander("2. Schichtenverzeichnis", expanded=False):
+with st.expander("2. Schichtenverzeichnis (DIN 4022 Spalten)", expanded=False):
+    # NEU: Spalten exakt nach Buchstaben a-i benannt für die Zuordnung
     default_geo = [
-        {"Bis_m": 14.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Konsistenz": "erdfeucht", "Farbe": "braun", "Kalk": "0", "Gruppe": "SE", "Bemerkung": "schwer zu bohren"},
-        {"Bis_m": 29.00, "Benennung": "Mudde", "Zusatz": "organisch", "Konsistenz": "steif", "Farbe": "dunkelbraun", "Kalk": "+", "Gruppe": "SU*-TL", "Bemerkung": ""},
-        {"Bis_m": 46.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Konsistenz": "nass", "Farbe": "grau", "Kalk": "+", "Gruppe": "SE", "Bemerkung": ""},
+        {"Bis_m": 14.00, "a": "mittelsandig", "b": "", "c": "erdfeucht", "d": "mäßig schwer zu bohren", "e": "braun", "f": "Sand", "g": "", "h": "SE", "i": "0", "Bemerkung": ""},
+        {"Bis_m": 29.00, "a": "Tf, Mutterboden", "b": "", "c": "steif", "d": "mäßig schwer zu bohren", "e": "dunkelbraun", "f": "Mudde", "g": "", "h": "SU*-TL", "i": "+", "Bemerkung": "WSP angebohrt 14,70m"},
+        {"Bis_m": 46.00, "a": "mittelsandig", "b": "", "c": "nass", "d": "mäßig schwer zu bohren", "e": "grau", "f": "Sand", "g": "", "h": "SE", "i": "+", "Bemerkung": ""},
     ]
     df_geo = st.data_editor(
         pd.DataFrame(default_geo), 
         num_rows="dynamic", 
         use_container_width=True,
         column_config={
-            "Konsistenz": st.column_config.SelectboxColumn(options=["nass", "erdfeucht", "steif", "weich", "fest"])
+            "Bis_m": st.column_config.NumberColumn("Bis (m)", format="%.2f"),
+            "a": st.column_config.TextColumn("a) Benennung/Beimeng."),
+            "b": st.column_config.TextColumn("b) Ergänzung"),
+            "c": st.column_config.SelectboxColumn("c) Beschaff. Bohrgut", options=["nass", "erdfeucht", "steif", "weich", "fest"]),
+            "d": st.column_config.TextColumn("d) Beschaff. Vorgang"),
+            "e": st.column_config.TextColumn("e) Farbe"),
+            "f": st.column_config.SelectboxColumn("f) Übliche Benennung", options=["Sand", "Kies", "Mudde", "Mergel", "Ton", "Schluff", "Mutterboden"]),
+            "g": st.column_config.TextColumn("g) Geol. Benennung"),
+            "h": st.column_config.TextColumn("h) Gruppe"),
+            "i": st.column_config.SelectboxColumn("i) Kalk", options=["0", "+", "++", "+++"]),
+            "Bemerkung": st.column_config.TextColumn("Bemerkungen")
         }
     )
 
