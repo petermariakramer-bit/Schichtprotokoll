@@ -53,7 +53,6 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     max_depth = 48
     if not df_geo.empty: max_depth = max(max_depth, df_geo['Bis_m'].max())
     
-    # HIER GEÄNDERT: Header-Höhe entfernt (50 -> 0), da der PDF-Header genutzt wird
     total_height = (max_depth * scale_y) + 50
     
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
@@ -67,7 +66,6 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     <pattern id="pat-Filterrohr" width="10" height="5" patternUnits="userSpaceOnUse"><rect width="10" height="5" fill="white" stroke="black"/><line x1="2" y1="2" x2="8" y2="2" stroke="black"/></pattern>
     </defs>'''
     
-    # Startpunkt für Grafik oben (kein Header mehr im SVG!)
     start_y = 10 
     col_geo_x = 80
     col_geo_w = 100
@@ -110,7 +108,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     return svg
 
 # ==============================================================================
-# 2. PDF HEADER FUNKTION (MIT LOGO)
+# 2. PDF HEADER FUNKTION (MIT 2-SPALTEN LAYOUT UNTEN)
 # ==============================================================================
 
 def draw_header_on_page(canvas, doc):
@@ -131,51 +129,48 @@ def draw_header_on_page(canvas, doc):
     x_line_1 = margin_left + box_w_firma
     x_line_2 = page_width - margin_right - box_w_akten
     
-    # 1. Rahmen & Linien
+    # 1. Rahmen (Außenlinien)
     canvas.setStrokeColor(colors.black)
     canvas.setLineWidth(1)
     canvas.rect(margin_left, header_bottom, page_width - margin_left - margin_right, header_top - header_bottom)
-    canvas.line(x_line_1, header_bottom, x_line_1, header_top) 
-    canvas.line(x_line_2, header_bottom, x_line_2, header_top) 
+    
+    # 2. Horizontale Linie (trennt obere und untere Zeile)
     canvas.line(margin_left, row_line_y, page_width - margin_right, row_line_y) 
+    
+    # 3. Vertikale Linien
+    # Linie 1 (Links): Trennt Logo und Titel. 
+    # WICHTIG: Geht nur von der Mitte (row_line_y) bis oben (header_top). Unten ist es offen!
+    canvas.line(x_line_1, row_line_y, x_line_1, header_top) 
+    
+    # Linie 2 (Rechts): Trennt Titel/Inhalt und Aktenzeichen/Datum.
+    # WICHTIG: Geht durchgehend von unten (header_bottom) bis oben (header_top).
+    canvas.line(x_line_2, header_bottom, x_line_2, header_top) 
+    
     
     # --- INHALT ---
     
-    # A) LOGO BEREICH (Links)
-    # Prüfen ob Logo vorhanden
+    # A) LOGO BEREICH (Oben Links)
     if meta.get('logo_bytes'):
         try:
             logo_data = ImageReader(BytesIO(meta['logo_bytes']))
-            # Bild proportional einpassen
-            # Verfügbarer Platz:
             avail_w = box_w_firma - 0.4*cm
-            avail_h = (header_top - row_line_y) - 0.4*cm # Platz über der unteren Zeile
-            
-            # Bildgröße ermitteln
+            avail_h = (header_top - row_line_y) - 0.4*cm 
             iw, ih = logo_data.getSize()
             aspect = ih / float(iw)
-            
-            # Skalieren
             if aspect > avail_h / avail_w:
                 draw_h = avail_h
                 draw_w = draw_h / aspect
             else:
                 draw_w = avail_w
                 draw_h = draw_w * aspect
-            
-            # Zentriert zeichnen im oberen Teil des linken Kastens
             x_img = margin_left + 0.2*cm + (avail_w - draw_w)/2
             y_img = row_line_y + 0.2*cm + (avail_h - draw_h)/2
-            
             canvas.drawImage(logo_data, x_img, y_img, width=draw_w, height=draw_h, mask='auto')
-            
-        except Exception as e:
-            # Fallback falls Bild kaputt
+        except:
             canvas.setFont("Helvetica-Bold", 8)
             canvas.setFillColor(colors.red)
             canvas.drawString(margin_left + 0.2*cm, header_top - 1.5*cm, "Logo Error")
     else:
-        # Fallback Text "Bohr2000" wenn kein Logo da ist
         canvas.setFont("Helvetica-Bold", 14)
         canvas.setFillColor(colors.green)
         canvas.drawString(margin_left + 0.2*cm, header_top - 0.6*cm, "Bohr2000")
@@ -183,7 +178,7 @@ def draw_header_on_page(canvas, doc):
         canvas.setFillColor(colors.black)
         canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
     
-    # B) TITEL (Mitte)
+    # B) TITEL (Oben Mitte)
     center_x = x_line_1 + (x_line_2 - x_line_1) / 2
     canvas.setFillColor(colors.black)
     canvas.setFont("Helvetica-Bold", 12)
@@ -192,7 +187,7 @@ def draw_header_on_page(canvas, doc):
     canvas.drawCentredString(center_x, header_top - 1.0*cm, "nach DIN 4022 / DIN 4023")
     canvas.drawCentredString(center_x, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
     
-    # C) AKTENZEICHEN (Rechts)
+    # C) AKTENZEICHEN (Oben Rechts)
     text_x_right = x_line_2 + 0.2*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 0.6*cm, "Aktenzeichen:")
@@ -201,13 +196,15 @@ def draw_header_on_page(canvas, doc):
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 1.5*cm, "Archiv-Nr:")
     
-    # D) UNTERE ZEILE
+    # D) UNTERE ZEILE (2 Spalten Layout)
+    
+    # Linke Spalte (Groß): Ort & Bohrung
     text_y_row = row_line_y - 0.4*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(margin_left + 0.2*cm, text_y_row, f"Ort: {meta['ort']}")
     canvas.drawString(margin_left + 0.2*cm, text_y_row - 0.4*cm, f"Bohrung: {meta['projekt']}")
     
-    canvas.line(x_line_2, header_bottom, x_line_2, row_line_y) # Datums-Trennlinie
+    # Rechte Spalte (Klein): Datum & Blatt
     canvas.drawString(text_x_right, text_y_row, "Datum:")
     canvas.drawString(text_x_right, text_y_row - 0.4*cm, meta['datum'])
     
@@ -305,7 +302,6 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
     col_map, col_data = st.columns([1, 1])
     with col_data:
         st.subheader("Stammdaten")
-        # LOGO UPLOAD
         logo_upload = st.file_uploader("Firmenlogo (für PDF Header)", type=["png", "jpg", "jpeg"])
         
         projekt = st.text_input("Projekt / Bohrung", value="Notwasserbrunnen ZE079-905")
@@ -355,14 +351,13 @@ with st.expander("3. Ausbau", expanded=False):
 # --- OUTPUT ---
 st.divider()
 
-# Logo Bytes holen falls vorhanden
 logo_bytes = logo_upload.getvalue() if logo_upload else None
 
 meta_data = {
     "projekt": projekt, "ort": ort, "firma": bohrfirma, "auftraggeber": auftraggeber,
     "datum": datum_str, "aktenzeichen": aktenzeichen, 
     "verfahren": bohrverfahren, "ansatz": ansatzpunkt, "teufe": endteufe, "ws_ruhe": ws_ruhe,
-    "logo_bytes": logo_bytes # Logo an Meta übergeben
+    "logo_bytes": logo_bytes
 }
 
 if st.button("📄 PDF mit Logo erstellen"):
