@@ -130,6 +130,7 @@ def draw_header_on_page(canvas, doc):
     canvas.line(x_line_1, row_line_y, x_line_1, header_top) 
     canvas.line(x_line_2, header_bottom, x_line_2, header_top) 
     
+    # LOGO
     if meta.get('logo_bytes'):
         try:
             logo_data = ImageReader(BytesIO(meta['logo_bytes']))
@@ -146,8 +147,7 @@ def draw_header_on_page(canvas, doc):
             x_img = margin_left + 0.2*cm + (avail_w - draw_w)/2
             y_img = row_line_y + 0.2*cm + (avail_h - draw_h)/2
             canvas.drawImage(logo_data, x_img, y_img, width=draw_w, height=draw_h, mask='auto')
-        except:
-            pass
+        except: pass
     else:
         canvas.setFont("Helvetica-Bold", 14)
         canvas.setFillColor(colors.green)
@@ -156,6 +156,7 @@ def draw_header_on_page(canvas, doc):
         canvas.setFillColor(colors.black)
         canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
     
+    # TITEL
     center_x = x_line_1 + (x_line_2 - x_line_1) / 2
     canvas.setFillColor(colors.black)
     canvas.setFont("Helvetica-Bold", 12)
@@ -164,6 +165,7 @@ def draw_header_on_page(canvas, doc):
     canvas.drawCentredString(center_x, header_top - 1.0*cm, "nach DIN 4022 / DIN 4023")
     canvas.drawCentredString(center_x, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
     
+    # AKTENZEICHEN
     text_x_right = x_line_2 + 0.2*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 0.6*cm, "Aktenzeichen:")
@@ -172,17 +174,22 @@ def draw_header_on_page(canvas, doc):
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 1.5*cm, "Archiv-Nr:")
     
+    # UNTERE ZEILE
     text_y_row = row_line_y - 0.4*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(margin_left + 0.2*cm, text_y_row, f"Ort: {meta['ort']}")
     canvas.drawString(margin_left + 0.2*cm, text_y_row - 0.4*cm, f"Bohrung: {meta['projekt']}")
     
     canvas.line(x_line_2, header_bottom, x_line_2, row_line_y) 
+    
+    # --- FIX: DATUM UND BLATTNUMMER GETRENNT ---
     canvas.drawString(text_x_right, text_y_row, "Datum:")
     canvas.drawString(text_x_right, text_y_row - 0.4*cm, meta['datum'])
     
+    # Blattnummer oben rechts in der unteren Zelle (auf Höhe von "Datum:")
     page_num = doc.page
-    canvas.drawRightString(page_width - margin_right - 0.2*cm, text_y_row - 0.2*cm, f"Blatt {page_num}")
+    canvas.drawRightString(page_width - margin_right - 0.2*cm, text_y_row, f"Blatt {page_num}")
+    
     canvas.restoreState()
 
 # ==============================================================================
@@ -202,17 +209,15 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     style_norm = styles['Normal']
     style_bold = ParagraphStyle('Bold', parent=styles['Normal'], fontName='Helvetica-Bold')
     
-    # --- SEITE 1: TABELLE 1 (Allgemeine Daten) ---
-    # NEU: Art der Bohrung hinzugefügt
+    # --- TABELLE 1: ALLGEMEINE DATEN ---
     data_block1 = [
         [Paragraph("Bohrung:", style_bold), Paragraph(meta['projekt'], style_norm)],
         [Paragraph("Ort:", style_bold), Paragraph(meta['ort'], style_norm)],
         [Paragraph("Kreis:", style_bold), Paragraph(meta['kreis'], style_norm)],
         [Paragraph("Zweck der Bohrung:", style_bold), Paragraph(meta['zweck'], style_norm)],
-        [Paragraph("Art der Bohrung:", style_bold), Paragraph(meta['art_bohrung'], style_norm)], # NEU
+        [Paragraph("Art der Bohrung:", style_bold), Paragraph(meta['art_bohrung'], style_norm)],
         [Paragraph("Höhe des Ansatzpunktes:", style_bold), Paragraph(f"{meta['ansatz']} m u. GOK", style_norm)]
     ]
-    
     t1 = Table(data_block1, colWidths=[5*cm, 11*cm])
     t1.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
@@ -224,16 +229,17 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t1)
     story.append(Spacer(1, 0.5*cm))
     
-    # --- SEITE 1: TABELLE 2 (Ausführungsdaten) ---
-    # NEU: Geräteführer hinzugefügt
+    # --- TABELLE 2: AUSFÜHRUNGSDATEN ---
+    # NEU: Gitterwerte hier als letzte Zeile eingefügt
     data_block2 = [
         [Paragraph("Auftraggeber:", style_bold), Paragraph(meta['auftraggeber'], style_norm)],
         [Paragraph("Objekt:", style_bold), Paragraph(meta['objekt'], style_norm)],
         [Paragraph("Bohrunternehmer:", style_bold), Paragraph(meta['firma'], style_norm)],
-        [Paragraph("Geräteführer:", style_bold), Paragraph(meta['geraetefuehrer'], style_norm)], # NEU
+        [Paragraph("Geräteführer:", style_bold), Paragraph(meta['geraetefuehrer'], style_norm)],
         [Paragraph("Gebohrt:", style_bold), Paragraph(meta['datum'], style_norm)],
         [Paragraph("Bohrlochdurchmesser:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['durchmesser']}mm", style_norm)],
-        [Paragraph("Bohrverfahren:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['verfahren']}", style_norm)]
+        [Paragraph("Bohrverfahren:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['verfahren']}", style_norm)],
+        [Paragraph("Gitterwerte:", style_bold), Paragraph(f"Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}", style_norm)] # NEU
     ]
     
     t2 = Table(data_block2, colWidths=[5*cm, 11*cm])
@@ -247,11 +253,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t2)
     story.append(Spacer(1, 0.5*cm))
     
-    # Koordinaten & Karte
-    coord_text = f"<b>Gitterwerte des Bohrpunktes:</b> Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}"
-    story.append(Paragraph(coord_text, style_norm))
-    story.append(Spacer(1, 0.2*cm))
-    
+    # Karte
     story.append(Paragraph("Lageplan", style_h2))
     if map_image_buffer:
         img = RLImage(map_image_buffer)
@@ -313,10 +315,9 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         ort = st.text_input("Ort / Adresse", value="Wiesenschlag ggü 4, 14129 Berlin")
         kreis = st.text_input("Kreis", value="Berlin")
         
-        # NEU: Felder für Zweck und Art nebeneinander
         c_zweck, c_art = st.columns(2)
         zweck = c_zweck.text_input("Zweck der Bohrung", value="Notbrunnen")
-        art_bohrung = c_art.text_input("Art der Bohrung", value="Grundwasser") # NEU
+        art_bohrung = c_art.text_input("Art der Bohrung", value="Grundwasser") 
         
         if st.button("📍 Adresse suchen"):
             try:
@@ -332,7 +333,7 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         
         c3, c4 = st.columns(2)
         bohrfirma = c3.text_input("Bohrunternehmer", value="Ackermann KG")
-        geraetefuehrer = c4.text_input("Geräteführer", value="C. Kempcke") # NEU
+        geraetefuehrer = c4.text_input("Geräteführer", value="C. Kempcke")
         
         datum_str = st.text_input("Bohrzeitraum", value="06.10.25 - 08.10.25")
         
