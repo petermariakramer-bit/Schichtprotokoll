@@ -3,7 +3,6 @@ import pandas as pd
 from streamlit_folium import st_folium
 import folium
 from geopy.geocoders import Nominatim
-from geopy.extra.rate_limiter import RateLimiter
 import html
 
 # --- KONFIGURATION ---
@@ -21,7 +20,7 @@ with st.expander("1. Kopfblatt & Standort (Seite 1)", expanded=True):
     
     with col_data:
         st.subheader("Stammdaten")
-        # Daten aus Quelle [cite: 8]
+        # Daten aus Quelle
         projekt = st.text_input("Projekt / Bohrung", value="Notwasserbrunnen ZE079-905")
         ort = st.text_input("Ort / Adresse", value="Wiesenschlag ggü 4, 14129 Berlin")
         
@@ -46,7 +45,7 @@ with st.expander("1. Kopfblatt & Standort (Seite 1)", expanded=True):
         datum_start = c3.date_input("Beginn", value=pd.to_datetime("2025-10-06"))
         datum_ende = c4.date_input("Ende", value=pd.to_datetime("2025-10-08"))
         
-        # Technische Daten [cite: 8]
+        # Technische Daten
         st.markdown("---")
         c5, c6 = st.columns(2)
         ansatzpunkt = c5.number_input("Höhe Ansatzpunkt (m u. GOK)", value=0.0)
@@ -54,20 +53,20 @@ with st.expander("1. Kopfblatt & Standort (Seite 1)", expanded=True):
         bohrverfahren = st.text_input("Bohrverfahren", value="Spülbohren")
         bohrdurchmesser = st.number_input("Bohrdurchmesser (mm)", value=330)
 
-  with col_map:
+    with col_map:
         st.subheader("Lageplan")
         # Karte rendern
         m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16)
         
-        # ÄNDERUNG: CircleMarker statt Marker für den "roten Punkt"
+        # Roter Punkt (CircleMarker)
         folium.CircleMarker(
             location=[st.session_state.lat, st.session_state.lon],
-            radius=8,          # Größe des Punktes
+            radius=8,          # Größe
             popup=projekt,
-            color="red",       # Randfarbe
+            color="red",       # Roter Rand
             fill=True,
-            fill_color="red",  # Füllfarbe
-            fill_opacity=1.0,  # Deckkraft
+            fill_color="red",  # Rote Füllung
+            fill_opacity=1.0,
             tooltip="Bohrpunkt"
         ).add_to(m)
         
@@ -78,7 +77,7 @@ with st.expander("1. Kopfblatt & Standort (Seite 1)", expanded=True):
 with st.expander("2. Schichtenverzeichnis (Seite 2 & 3)", expanded=True):
     st.info("Geben Sie hier die Geologie ein, analog zur Tabelle im PDF.")
     
-    # Standardwerte basierend auf PDF Seite 2 
+    # Standardwerte basierend auf PDF Seite 2
     default_geologie = [
         {"Tiefe bis (m)": 14.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Farbe": "braun", "Konsistenz": "erdfeucht", "Kurzzeichen": "mS", "Gruppe": "SE", "Kalk": "0"},
         {"Tiefe bis (m)": 29.00, "Benennung": "Mudde", "Zusatz": "organisch", "Farbe": "dunkelbraun", "Konsistenz": "steif", "Kurzzeichen": "Mu", "Gruppe": "SU*-TL", "Kalk": "+"},
@@ -106,7 +105,7 @@ with st.expander("3. Brunnenausbau & Ringraum (Daten für Grafik)", expanded=Tru
     
     with col_rohr:
         st.subheader("Rohrtour (Innen)")
-        # Daten aus [cite: 20]
+        # Daten aus
         default_rohre = [
             {"Von (m)": 0.00, "Bis (m)": 40.00, "Typ": "Vollrohr", "DN (mm)": 150},
             {"Von (m)": 40.00, "Bis (m)": 44.00, "Typ": "Filterrohr", "DN (mm)": 150}, # angepasst an Bild Seite 4
@@ -114,12 +113,12 @@ with st.expander("3. Brunnenausbau & Ringraum (Daten für Grafik)", expanded=Tru
         ]
         df_rohr = st.data_editor(pd.DataFrame(default_rohre), num_rows="dynamic", use_container_width=True, key="rohr_editor")
         
-        st.markdown("**Wasserstände [cite: 20]**")
+        st.markdown("**Wasserstände**")
         ws_ruhe = st.number_input("Ruhewasserspiegel (m u. GOK)", value=14.70)
     
     with col_ring:
         st.subheader("Ringraum (Außen)")
-        # Daten aus [cite: 20] und Bild Seite 4 [cite: 82, 101, 108, 120]
+        # Daten aus und Bild Seite 4
         default_ringraum = [
             {"Von (m)": 0.00, "Bis (m)": 14.00, "Material": "Filterkies"},
             {"Von (m)": 14.00, "Bis (m)": 29.00, "Material": "Tonsperre"}, # Tf, Mu laut Grafik
@@ -140,9 +139,9 @@ with st.expander("3. Brunnenausbau & Ringraum (Daten für Grafik)", expanded=Tru
 # --- TEIL 4: SVG GENERIERUNG ---
 
 def generate_svg_din4023(geo_data, pipe_data, ring_data, meta, width=800):
-    # Skalierung: Seite 4 nutzt 1:240 [cite: 72]
-    # Wir nehmen 4 Pixel pro Meter für gute Lesbarkeit am Bildschirm, aber layouten es wie DIN
-    scale_y = 15 # Pixel pro Meter Tiefe
+    # Skalierung: Seite 4 nutzt 1:240
+    # Wir nehmen 15 Pixel pro Meter für gute Lesbarkeit am Bildschirm
+    scale_y = 15 
     
     max_depth = max(geo_data["Tiefe bis (m)"].max() if not geo_data.empty else 0, 45)
     header_height = 200
@@ -226,7 +225,7 @@ def generate_svg_din4023(geo_data, pipe_data, ring_data, meta, width=800):
         svg += f'<text x="{col_geo_x-5}" y="{last_y+h}" font-size="10" text-anchor="end">{depth:.2f}</text>'
         svg += f'<line x1="{col_geo_x-10}" y1="{last_y+h}" x2="{col_geo_x}" y2="{last_y+h}" stroke="black"/>'
         
-        # Kurzzeichen (groß, mittig wie im PDF bei "Mu") [cite: 85, 90]
+        # Kurzzeichen (groß, mittig wie im PDF bei "Mu")
         kz = row["Kurzzeichen"]
         if pd.notna(kz):
             svg += f'<text x="{col_geo_x+col_geo_w/2}" y="{last_y+h/2}" font-size="18" text-anchor="middle" fill="black" stroke="white" stroke-width="0.5" paint-order="stroke">{kz}</text>'
@@ -252,7 +251,7 @@ def generate_svg_din4023(geo_data, pipe_data, ring_data, meta, width=800):
         # Zeichnen (Ringraum = Volle Breite - Rohr) -> Hier vereinfacht: Volle Breite als Hintergrund
         svg += f'<rect x="{center_tech - hole_radius}" y="{y}" width="{hole_radius*2}" height="{h}" fill="url(#{mat})" stroke="black"/>'
         
-        # Beschriftung Ringraum (rechts) [cite: 82, 101]
+        # Beschriftung Ringraum (rechts)
         svg += f'<text x="{center_tech + hole_radius + 10}" y="{y+h}" font-size="10">{depth_to:.2f} {row["Material"]}</text>'
         svg += f'<line x1="{center_tech + hole_radius}" y1="{y+h}" x2="{center_tech + hole_radius + 5}" y2="{y+h}" stroke="black"/>'
 
@@ -270,11 +269,11 @@ def generate_svg_din4023(geo_data, pipe_data, ring_data, meta, width=800):
         
         svg += f'<rect x="{center_tech - pipe_radius}" y="{y}" width="{pipe_radius*2}" height="{h}" fill="{fill}" stroke="black" stroke-width="1.5"/>'
         
-        # Beschriftung Rohr (rechts, leicht versetzt) 
+        # Beschriftung Rohr (rechts, leicht versetzt)
         if "Filter" in row["Typ"]:
              svg += f'<text x="{center_tech + pipe_radius + 80}" y="{y+h-5}" font-size="10" font-style="italic">Schlitzfilter</text>'
 
-    # --- WASSERSTÄNDE  ---
+    # --- WASSERSTÄNDE ---
     if meta["ws_ruhe"]:
         ws_y = start_y + (meta["ws_ruhe"] * scale_y)
         svg += f'<line x1="{col_geo_x-20}" y1="{ws_y}" x2="{col_geo_x+20}" y2="{ws_y}" stroke="blue" stroke-width="1.5"/>'
