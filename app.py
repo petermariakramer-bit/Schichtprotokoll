@@ -20,6 +20,7 @@ from reportlab.lib.units import cm, mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics import renderPDF
+from reportlab.lib.utils import ImageReader
 from svglib.svglib import svg2rlg
 
 # --- KONFIGURATION ---
@@ -51,7 +52,9 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     width = 700
     max_depth = 48
     if not df_geo.empty: max_depth = max(max_depth, df_geo['Bis_m'].max())
-    total_height = 50 + (max_depth * scale_y) + 50
+    
+    # HIER GEÄNDERT: Header-Höhe entfernt (50 -> 0), da der PDF-Header genutzt wird
+    total_height = (max_depth * scale_y) + 50
     
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
     svg += '''<defs>
@@ -64,11 +67,13 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     <pattern id="pat-Filterrohr" width="10" height="5" patternUnits="userSpaceOnUse"><rect width="10" height="5" fill="white" stroke="black"/><line x1="2" y1="2" x2="8" y2="2" stroke="black"/></pattern>
     </defs>'''
     
-    start_y = 20
+    # Startpunkt für Grafik oben (kein Header mehr im SVG!)
+    start_y = 10 
     col_geo_x = 80
     col_geo_w = 100
     col_tech_x = 350
     
+    # Skala
     svg += f'<line x1="{col_geo_x}" y1="{start_y}" x2="{col_geo_x}" y2="{start_y + max_depth*scale_y}" stroke="black"/>'
     for i in range(int(max_depth)+1):
         y = start_y + i*scale_y
@@ -105,7 +110,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     return svg
 
 # ==============================================================================
-# 2. PDF HEADER FUNKTION (NEUES LAYOUT)
+# 2. PDF HEADER FUNKTION (MIT LOGO)
 # ==============================================================================
 
 def draw_header_on_page(canvas, doc):
@@ -116,47 +121,71 @@ def draw_header_on_page(canvas, doc):
     margin_left = 2*cm
     margin_right = 2*cm
     
-    # --- NEUE BREITEN DEFINITION ---
-    # Gesamtbreite verfügbar: 21cm - 4cm = 17cm
-    box_w_firma = 3.5 * cm      # Schmaler (vorher 4cm)
-    box_w_akten = 4.0 * cm      # Schmaler (vorher 5cm)
-    # Der mittlere Kasten nimmt den Rest automatisch
+    box_w_firma = 3.5 * cm      
+    box_w_akten = 4.0 * cm      
     
-    # Y-Positionen
     header_top = page_height - 1*cm
     header_bottom = page_height - 4.5*cm 
     row_line_y = header_bottom + 1.2*cm
     
-    # X-Positionen der Trennlinien
     x_line_1 = margin_left + box_w_firma
     x_line_2 = page_width - margin_right - box_w_akten
     
-    # 1. Rahmen
+    # 1. Rahmen & Linien
     canvas.setStrokeColor(colors.black)
     canvas.setLineWidth(1)
     canvas.rect(margin_left, header_bottom, page_width - margin_left - margin_right, header_top - header_bottom)
-    
-    # 2. Trennlinien
-    canvas.line(x_line_1, header_bottom, x_line_1, header_top) # Links
-    canvas.line(x_line_2, header_bottom, x_line_2, header_top) # Rechts
-    canvas.line(margin_left, row_line_y, page_width - margin_right, row_line_y) # Horizontal
+    canvas.line(x_line_1, header_bottom, x_line_1, header_top) 
+    canvas.line(x_line_2, header_bottom, x_line_2, header_top) 
+    canvas.line(margin_left, row_line_y, page_width - margin_right, row_line_y) 
     
     # --- INHALT ---
     
-    # A) FIRMA (Links)
-    canvas.setFont("Helvetica-Bold", 14)
-    canvas.setFillColor(colors.green)
-    canvas.drawString(margin_left + 0.2*cm, header_top - 0.6*cm, "Bohr2000")
+    # A) LOGO BEREICH (Links)
+    # Prüfen ob Logo vorhanden
+    if meta.get('logo_bytes'):
+        try:
+            logo_data = ImageReader(BytesIO(meta['logo_bytes']))
+            # Bild proportional einpassen
+            # Verfügbarer Platz:
+            avail_w = box_w_firma - 0.4*cm
+            avail_h = (header_top - row_line_y) - 0.4*cm # Platz über der unteren Zeile
+            
+            # Bildgröße ermitteln
+            iw, ih = logo_data.getSize()
+            aspect = ih / float(iw)
+            
+            # Skalieren
+            if aspect > avail_h / avail_w:
+                draw_h = avail_h
+                draw_w = draw_h / aspect
+            else:
+                draw_w = avail_w
+                draw_h = draw_w * aspect
+            
+            # Zentriert zeichnen im oberen Teil des linken Kastens
+            x_img = margin_left + 0.2*cm + (avail_w - draw_w)/2
+            y_img = row_line_y + 0.2*cm + (avail_h - draw_h)/2
+            
+            canvas.drawImage(logo_data, x_img, y_img, width=draw_w, height=draw_h, mask='auto')
+            
+        except Exception as e:
+            # Fallback falls Bild kaputt
+            canvas.setFont("Helvetica-Bold", 8)
+            canvas.setFillColor(colors.red)
+            canvas.drawString(margin_left + 0.2*cm, header_top - 1.5*cm, "Logo Error")
+    else:
+        # Fallback Text "Bohr2000" wenn kein Logo da ist
+        canvas.setFont("Helvetica-Bold", 14)
+        canvas.setFillColor(colors.green)
+        canvas.drawString(margin_left + 0.2*cm, header_top - 0.6*cm, "Bohr2000")
+        canvas.setFont("Helvetica-Bold", 10)
+        canvas.setFillColor(colors.black)
+        canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
     
-    canvas.setFont("Helvetica-Bold", 10)
-    canvas.setFillColor(colors.black)
-    # Textumbruch falls Firmenname zu lang
-    if len(meta['firma']) > 15: canvas.setFont("Helvetica-Bold", 8)
-    canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
-    
-    # B) TITEL (Mitte) - Exakt zentriert zwischen den Linien
+    # B) TITEL (Mitte)
     center_x = x_line_1 + (x_line_2 - x_line_1) / 2
-    
+    canvas.setFillColor(colors.black)
     canvas.setFont("Helvetica-Bold", 12)
     canvas.drawCentredString(center_x, header_top - 0.6*cm, "Schichtenverzeichnis / Bohrprofil")
     canvas.setFont("Helvetica", 9)
@@ -164,14 +193,11 @@ def draw_header_on_page(canvas, doc):
     canvas.drawCentredString(center_x, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
     
     # C) AKTENZEICHEN (Rechts)
-    # Text eingerückt ab der Trennlinie
     text_x_right = x_line_2 + 0.2*cm
-    
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 0.6*cm, "Aktenzeichen:")
     canvas.setFont("Helvetica-Bold", 10)
     canvas.drawString(text_x_right, header_top - 1.0*cm, meta['aktenzeichen'])
-    
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 1.5*cm, "Archiv-Nr:")
     
@@ -181,16 +207,13 @@ def draw_header_on_page(canvas, doc):
     canvas.drawString(margin_left + 0.2*cm, text_y_row, f"Ort: {meta['ort']}")
     canvas.drawString(margin_left + 0.2*cm, text_y_row - 0.4*cm, f"Bohrung: {meta['projekt']}")
     
-    # Trennlinie für Datum (aligned mit oberer Linie)
-    canvas.line(x_line_2, header_bottom, x_line_2, row_line_y)
-    
+    canvas.line(x_line_2, header_bottom, x_line_2, row_line_y) # Datums-Trennlinie
     canvas.drawString(text_x_right, text_y_row, "Datum:")
     canvas.drawString(text_x_right, text_y_row - 0.4*cm, meta['datum'])
     
     # Blatt Nr.
     page_num = doc.page
     canvas.drawRightString(page_width - margin_right - 0.2*cm, text_y_row - 0.2*cm, f"Blatt {page_num}")
-
     canvas.restoreState()
 
 # ==============================================================================
@@ -209,7 +232,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     style_h2 = styles['Heading2']
     style_norm = styles['Normal']
     
-    # Seite 1 Inhalt
+    # Seite 1
     story.append(Paragraph("Stammdaten Übersicht", style_h2))
     
     data_stamm = [
@@ -236,7 +259,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         story.append(img)
     else:
         story.append(Paragraph("(Keine Karte)", style_norm))
-        
     story.append(PageBreak())
     
     # Seite 2
@@ -250,7 +272,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
             row['Farbe'], row['Kalk'], row['Gruppe'],
             Paragraph(str(row['Bemerkung']), style_norm)
         ])
-    
     t_geo = Table(table_data, colWidths=[2*cm, 2.5*cm, 3.5*cm, 2*cm, 1*cm, 2*cm, 3*cm], repeatRows=1)
     t_geo.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
@@ -284,6 +305,9 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
     col_map, col_data = st.columns([1, 1])
     with col_data:
         st.subheader("Stammdaten")
+        # LOGO UPLOAD
+        logo_upload = st.file_uploader("Firmenlogo (für PDF Header)", type=["png", "jpg", "jpeg"])
+        
         projekt = st.text_input("Projekt / Bohrung", value="Notwasserbrunnen ZE079-905")
         ort = st.text_input("Ort / Adresse", value="Wiesenschlag ggü 4, 14129 Berlin")
         if st.button("📍 Adresse suchen"):
@@ -330,13 +354,18 @@ with st.expander("3. Ausbau", expanded=False):
 
 # --- OUTPUT ---
 st.divider()
+
+# Logo Bytes holen falls vorhanden
+logo_bytes = logo_upload.getvalue() if logo_upload else None
+
 meta_data = {
     "projekt": projekt, "ort": ort, "firma": bohrfirma, "auftraggeber": auftraggeber,
     "datum": datum_str, "aktenzeichen": aktenzeichen, 
-    "verfahren": bohrverfahren, "ansatz": ansatzpunkt, "teufe": endteufe, "ws_ruhe": ws_ruhe
+    "verfahren": bohrverfahren, "ansatz": ansatzpunkt, "teufe": endteufe, "ws_ruhe": ws_ruhe,
+    "logo_bytes": logo_bytes # Logo an Meta übergeben
 }
 
-if st.button("📄 PDF mit Kopfzeile erstellen"):
+if st.button("📄 PDF mit Logo erstellen"):
     svg_str = generate_svg_string(df_geo, df_rohr, df_ring, meta_data)
     map_buf = get_static_map_image(st.session_state.lat, st.session_state.lon)
     pdf = create_multipage_pdf_with_header(meta_data, df_geo, df_rohr, df_ring, svg_str, map_buf)
