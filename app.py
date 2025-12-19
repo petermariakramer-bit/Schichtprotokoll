@@ -50,7 +50,7 @@ def get_static_map_image(lat, lon, zoom=15):
         return None
 
 # ==============================================================================
-# 2. HELPER: SVG GRAFIK (INTEGRIERTE HINTERGRÜNDE)
+# 2. HELPER: SVG GRAFIK (Fix: 2-Ebenen-System)
 # ==============================================================================
 def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     scale_y = 15
@@ -62,47 +62,39 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     
     svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg">'
     
-    # --- DEFINITIONEN (Farbe ist jetzt TEIL des Musters!) ---
+    # --- DEFINITIONEN (Muster OHNE Hintergrundfarbe = Transparent) ---
     svg += '''<defs>
     <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse">
-        <rect width="10" height="10" fill="#FFF59D"/>
         <rect x="2" y="2" width="2" height="2" fill="black"/>
         <rect x="7" y="7" width="2" height="2" fill="black"/>
     </pattern>
     
-    <pattern id="pat-Mudde" width="10" height="10" patternUnits="userSpaceOnUse">
-        <rect width="10" height="10" fill="#AED581"/>
-        <rect x="2" y="2" width="2" height="2" fill="#5D4037"/>
-        <rect x="7" y="7" width="2" height="2" fill="#5D4037"/>
+    <pattern id="pat-Mudde-Dots" width="10" height="10" patternUnits="userSpaceOnUse">
+        <rect x="2" y="2" width="3" height="3" fill="#5D4037"/>
+        <rect x="7" y="7" width="3" height="3" fill="#5D4037"/>
     </pattern>
     
     <pattern id="pat-Kies" width="12" height="12" patternUnits="userSpaceOnUse">
-        <rect width="12" height="12" fill="#FFCC80"/>
-        <circle cx="6" cy="6" r="3" fill="none" stroke="black" stroke-width="1"/>
+        <circle cx="6" cy="6" r="3" fill="none" stroke="black" stroke-width="1.5"/>
     </pattern>
     
     <pattern id="pat-Schluff" width="4" height="4" patternUnits="userSpaceOnUse">
-        <rect width="4" height="4" fill="#E6EE9C"/>
-        <line x1="2" y1="0" x2="2" y2="4" stroke="black" stroke-width="0.5"/>
+        <line x1="2" y1="0" x2="2" y2="4" stroke="black" stroke-width="1"/>
     </pattern>
     
     <pattern id="pat-Ton" width="4" height="4" patternUnits="userSpaceOnUse">
-        <rect width="4" height="4" fill="#BCAAA4"/>
-        <line x1="0" y1="2" x2="4" y2="2" stroke="black" stroke-width="0.5"/>
+        <line x1="0" y1="2" x2="4" y2="2" stroke="black" stroke-width="1"/>
     </pattern>
     
     <pattern id="pat-Lehm" width="6" height="6" patternUnits="userSpaceOnUse">
-        <rect width="6" height="6" fill="#FFE082"/>
-        <path d="M3,0 L3,6 M0,3 L6,3" stroke="black" stroke-width="0.5"/>
+        <path d="M3,0 L3,6 M0,3 L6,3" stroke="black" stroke-width="1"/>
     </pattern>
     
     <pattern id="pat-Mutterboden" width="10" height="10" patternUnits="userSpaceOnUse">
-        <rect width="10" height="10" fill="#5D4037"/>
         <path d="M2,5 L5,8 L8,5" fill="none" stroke="white" stroke-width="1.5"/>
     </pattern>
     
     <pattern id="pat-Auffuellung" width="10" height="10" patternUnits="userSpaceOnUse">
-        <rect width="10" height="10" fill="#EEEEEE"/>
         <path d="M0,10 L10,0" stroke="black" stroke-width="1"/>
     </pattern>
 
@@ -116,7 +108,7 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     col_geo_w = 100
     col_tech_x = 350
     
-    # Skala
+    # Skala Linie
     svg += f'<line x1="{col_geo_x}" y1="{start_y}" x2="{col_geo_x}" y2="{start_y + max_depth*scale_y}" stroke="black"/>'
     for i in range(int(max_depth)+1):
         y = start_y + i*scale_y
@@ -127,30 +119,49 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     for _, r in df_geo.iterrows():
         h = (r['Bis_m'] - last_d) * scale_y
         
-        # Textanalyse zur Musterwahl
+        # Textanalyse
         boden_text = (str(r.get('f', '')) + " " + str(r.get('a', '')) + " " + str(r.get('g', ''))).lower()
         
-        # Standard: Sand
-        pat_id = "pat-Sand"
+        # Default: Sand / Gelb
+        fill_color = "#FFF59D" 
+        pattern_url = "url(#pat-Sand)"
         
-        if "kies" in boden_text: pat_id = "pat-Kies"
-        elif "schluff" in boden_text: pat_id = "pat-Schluff"
-        elif "ton" in boden_text: pat_id = "pat-Ton"
-        elif "lehm" in boden_text: pat_id = "pat-Lehm"
-        elif "mudde" in boden_text or "torf" in boden_text: pat_id = "pat-Mudde"
-        elif "mutterboden" in boden_text: pat_id = "pat-Mutterboden"
-        elif "auffüllung" in boden_text: pat_id = "pat-Auffuellung"
+        if "kies" in boden_text:
+            fill_color = "#FFCC80" # Orange
+            pattern_url = "url(#pat-Kies)"
+        elif "schluff" in boden_text:
+            fill_color = "#E6EE9C" # Ocker
+            pattern_url = "url(#pat-Schluff)"
+        elif "ton" in boden_text:
+            fill_color = "#BCAAA4" # Braun
+            pattern_url = "url(#pat-Ton)"
+        elif "lehm" in boden_text:
+            fill_color = "#FFE082" # Gelb-Braun
+            pattern_url = "url(#pat-Lehm)"
+        elif "mudde" in boden_text or "torf" in boden_text:
+            fill_color = "#AED581" # Hellgrün
+            pattern_url = "url(#pat-Mudde-Dots)" # Braune Punkte
+        elif "mutterboden" in boden_text:
+            fill_color = "#5D4037" # Dunkelbraun
+            pattern_url = "url(#pat-Mutterboden)"
+        elif "auffüllung" in boden_text:
+            fill_color = "#EEEEEE" # Grau
+            pattern_url = "url(#pat-Auffuellung)"
         
         # Priorität Sand
-        if "sand" in str(r.get('f', '')).lower(): pat_id = "pat-Sand"
+        if "sand" in str(r.get('f', '')).lower():
+            fill_color = "#FFF59D"
+            pattern_url = "url(#pat-Sand)"
 
-        # EINZIGES RECHTECK mit Pattern-Fill (enthält Farbe + Muster)
-        svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="url(#{pat_id})" stroke="black"/>'
+        # 1. Rechteck: Nur FARBE (Solide)
+        svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="{fill_color}" stroke="none"/>'
+        
+        # 2. Rechteck: Nur MUSTER (Transparent, liegt drüber)
+        svg += f'<rect x="{col_geo_x}" y="{start_y+last_d*scale_y}" width="{col_geo_w}" height="{h}" fill="{pattern_url}" stroke="black" stroke-width="1"/>'
         
         # Text
         label = r.get('f', '')
-        # Textfarbe weiß nur bei Mutterboden
-        text_col = "white" if pat_id == "pat-Mutterboden" else "black"
+        text_col = "white" if fill_color == "#5D4037" else "black"
         svg += f'<text x="{col_geo_x+col_geo_w+5}" y="{start_y+last_d*scale_y + h/2}" font-family="Arial" font-size="10" fill="{text_col}">{label}</text>'
         
         last_d = r['Bis_m']
