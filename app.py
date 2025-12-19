@@ -37,7 +37,6 @@ st.title("🕳️ Bohrprotokoll & Schichtenverzeichnis")
 def get_static_map_image(lat, lon, zoom=15):
     if not HAS_STATICMAP: return None
     try:
-        # Breite etwas höher rendern für gute Qualität
         m = StaticMap(width=1000, height=500, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
         marker = StaticCircleMarker((lon, lat), 'red', 18)
         m.add_marker(marker)
@@ -124,13 +123,25 @@ def draw_header_on_page(canvas, doc):
     x_line_1 = margin_left + box_w_firma
     x_line_2 = page_width - margin_right - box_w_akten
     
+    # --- GRAUER HINTERGRUND FÜR LOGO ---
+    # Rechteck oben links (Logo-Feld)
+    canvas.setFillColor(colors.whitesmoke) # Leichtes Grau
+    # x, y, width, height
+    canvas.rect(margin_left, row_line_y, box_w_firma, header_top - row_line_y, fill=1, stroke=0)
+    
+    # Rahmenlinien wieder auf Schwarz setzen
     canvas.setStrokeColor(colors.black)
     canvas.setLineWidth(1)
-    canvas.rect(margin_left, header_bottom, page_width - margin_left - margin_right, header_top - header_bottom)
+    
+    # Außenrahmen
+    canvas.rect(margin_left, header_bottom, page_width - margin_left - margin_right, header_top - header_bottom, fill=0, stroke=1)
+    
+    # Trennlinien
     canvas.line(margin_left, row_line_y, page_width - margin_right, row_line_y) 
     canvas.line(x_line_1, row_line_y, x_line_1, header_top) 
     canvas.line(x_line_2, header_bottom, x_line_2, header_top) 
     
+    # LOGO
     if meta.get('logo_bytes'):
         try:
             logo_data = ImageReader(BytesIO(meta['logo_bytes']))
@@ -156,6 +167,7 @@ def draw_header_on_page(canvas, doc):
         canvas.setFillColor(colors.black)
         canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
     
+    # TITEL
     center_x = x_line_1 + (x_line_2 - x_line_1) / 2
     canvas.setFillColor(colors.black)
     canvas.setFont("Helvetica-Bold", 12)
@@ -164,6 +176,7 @@ def draw_header_on_page(canvas, doc):
     canvas.drawCentredString(center_x, header_top - 1.0*cm, "nach DIN 4022 / DIN 4023")
     canvas.drawCentredString(center_x, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
     
+    # AKTENZEICHEN
     text_x_right = x_line_2 + 0.2*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 0.6*cm, "Aktenzeichen:")
@@ -172,6 +185,7 @@ def draw_header_on_page(canvas, doc):
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 1.5*cm, "Archiv-Nr:")
     
+    # UNTERE ZEILE
     text_y_row = row_line_y - 0.4*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(margin_left + 0.2*cm, text_y_row, f"Ort: {meta['ort']}")
@@ -186,7 +200,7 @@ def draw_header_on_page(canvas, doc):
     canvas.restoreState()
 
 # ==============================================================================
-# 3. PDF BUILDER (FULL WIDTH)
+# 3. PDF BUILDER
 # ==============================================================================
 
 def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, map_image_buffer):
@@ -199,85 +213,75 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story = []
     styles = getSampleStyleSheet()
     
-    # Stildefinitionen anpassen (kleinere Schrift)
-    style_norm = styles['Normal']
-    style_norm.fontSize = 9  # Kleiner als vorher (war 10)
-    style_norm.leading = 11  # Zeilenabstand anpassen
+    # --- SCHRIFTGRÖSSE FÜR TABELLEN (KLEINER) ---
+    style_tab_norm = ParagraphStyle('TabNorm', parent=styles['Normal'], fontSize=8, leading=10)
+    style_tab_bold = ParagraphStyle('TabBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     
-    style_bold = ParagraphStyle('Bold', parent=style_norm, fontName='Helvetica-Bold')
     style_h2 = styles['Heading2']
     
-    # --- BREITEN BERECHNUNG ---
-    # Gesamtbreite der Seite minus Ränder (2cm links, 2cm rechts)
+    # --- BREITEN ---
     page_width, _ = A4
     available_width = page_width - 4*cm
-    
-    # Spaltenaufteilung (z.B. erste Spalte 5cm, Rest der zweite Spalte)
     col1_width = 5*cm
     col2_width = available_width - col1_width
     
     # --- TABELLE 1: ALLGEMEINE DATEN ---
     data_block1 = [
-        [Paragraph("Bohrung:", style_bold), Paragraph(meta['projekt'], style_norm)],
-        [Paragraph("Ort:", style_bold), Paragraph(meta['ort'], style_norm)],
-        [Paragraph("Kreis:", style_bold), Paragraph(meta['kreis'], style_norm)],
-        [Paragraph("Zweck der Bohrung:", style_bold), Paragraph(meta['zweck'], style_norm)],
-        [Paragraph("Art der Bohrung:", style_bold), Paragraph(meta['art_bohrung'], style_norm)],
-        [Paragraph("Höhe des Ansatzpunktes:", style_bold), Paragraph(f"{meta['ansatz']} m u. GOK", style_norm)]
+        [Paragraph("Bohrung:", style_tab_bold), Paragraph(meta['projekt'], style_tab_norm)],
+        [Paragraph("Ort:", style_tab_bold), Paragraph(meta['ort'], style_tab_norm)],
+        [Paragraph("Kreis:", style_tab_bold), Paragraph(meta['kreis'], style_tab_norm)],
+        [Paragraph("Zweck der Bohrung:", style_tab_bold), Paragraph(meta['zweck'], style_tab_norm)],
+        [Paragraph("Art der Bohrung:", style_tab_bold), Paragraph(meta['art_bohrung'], style_tab_norm)],
+        [Paragraph("Höhe des Ansatzpunktes:", style_tab_bold), Paragraph(f"{meta['ansatz']} m u. GOK", style_tab_norm)]
     ]
     
-    # colWidths exakt so setzen, dass sie die volle Breite füllen
     t1 = Table(data_block1, colWidths=[col1_width, col2_width])
     t1.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
         ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
         ('LEFTPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
     ]))
     story.append(t1)
     story.append(Spacer(1, 0.5*cm))
     
     # --- TABELLE 2: AUSFÜHRUNGSDATEN ---
     data_block2 = [
-        [Paragraph("Auftraggeber:", style_bold), Paragraph(meta['auftraggeber'], style_norm)],
-        [Paragraph("Objekt:", style_bold), Paragraph(meta['objekt'], style_norm)],
-        [Paragraph("Bohrunternehmer:", style_bold), Paragraph(meta['firma'], style_norm)],
-        [Paragraph("Geräteführer:", style_bold), Paragraph(meta['geraetefuehrer'], style_norm)],
-        [Paragraph("Gebohrt:", style_bold), Paragraph(meta['datum'], style_norm)],
-        [Paragraph("Bohrlochdurchmesser:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['durchmesser']}mm", style_norm)],
-        [Paragraph("Bohrverfahren:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['verfahren']}", style_norm)],
-        [Paragraph("Gitterwerte:", style_bold), Paragraph(f"Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}", style_norm)]
+        [Paragraph("Auftraggeber:", style_tab_bold), Paragraph(meta['auftraggeber'], style_tab_norm)],
+        [Paragraph("Objekt:", style_tab_bold), Paragraph(meta['objekt'], style_tab_norm)],
+        [Paragraph("Bohrunternehmer:", style_tab_bold), Paragraph(meta['firma'], style_tab_norm)],
+        [Paragraph("Geräteführer:", style_tab_bold), Paragraph(meta['geraetefuehrer'], style_tab_norm)],
+        [Paragraph("Gebohrt:", style_tab_bold), Paragraph(meta['datum'], style_tab_norm)],
+        [Paragraph("Bohrlochdurchmesser:", style_tab_bold), Paragraph(f"bis {meta['teufe']}m: {meta['durchmesser']}mm", style_tab_norm)],
+        [Paragraph("Bohrverfahren:", style_tab_bold), Paragraph(f"bis {meta['teufe']}m: {meta['verfahren']}", style_tab_norm)],
+        [Paragraph("Gitterwerte:", style_tab_bold), Paragraph(f"Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}", style_tab_norm)]
     ]
     
-    # Auch hier volle Breite
     t2 = Table(data_block2, colWidths=[col1_width, col2_width])
     t2.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
         ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
         ('LEFTPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
     ]))
     story.append(t2)
     story.append(Spacer(1, 0.5*cm))
     
     # --- KARTE MIT RAHMEN ---
-    # Überschrift "Lageplan" wurde entfernt
-    
     if map_image_buffer:
         img = RLImage(map_image_buffer)
-        
-        # Bild auf volle verfügbare Breite skalieren
         img_width = available_width
         aspect = img.imageHeight / float(img.imageWidth)
         img.drawWidth = img_width
         img.drawHeight = img_width * aspect
         
-        # Bild in eine Tabelle packen, um den Rahmen zu zeichnen
         t_map = Table([[img]], colWidths=[available_width])
         t_map.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black), # Schwarzer Rahmen um die Karte
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('LEFTPADDING', (0,0), (-1,-1), 0),
@@ -287,7 +291,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         ]))
         story.append(t_map)
     else:
-        story.append(Paragraph("(Keine Karte)", style_norm))
+        story.append(Paragraph("(Keine Karte)", style_tab_norm))
         
     story.append(PageBreak())
     
@@ -297,14 +301,15 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     for _, row in df_geo.iterrows():
         table_data.append([
             f"{row['Bis_m']:.2f}",
-            Paragraph(str(row['Benennung']), style_norm),
-            Paragraph(str(row['Zusatz']), style_norm),
+            Paragraph(str(row['Benennung']), style_tab_norm),
+            Paragraph(str(row['Zusatz']), style_tab_norm),
             row['Farbe'], row['Kalk'], row['Gruppe'],
-            Paragraph(str(row['Bemerkung']), style_norm)
+            Paragraph(str(row['Bemerkung']), style_tab_norm)
         ])
     t_geo = Table(table_data, colWidths=[2*cm, 2.5*cm, 3.5*cm, 2*cm, 1*cm, 2*cm, 3*cm], repeatRows=1)
     t_geo.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FontSize', (0,0), (-1,-1), 8), # Schriftgröße auch für die ganze Tabelle setzen
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
