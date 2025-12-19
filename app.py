@@ -123,15 +123,19 @@ def generate_svg(data_df, meta_data):
         y = 10 + i * row_h
         svg += f'<line x1="{table_x}" y1="{y}" x2="{total_width-10}" y2="{y}" stroke="black" stroke-width="0.5"/>'
     
-    # Texte im Kopf
-    def draw_row(y, label, value):
-        svg += f'<text x="{table_x + 5}" y="{y+20}" font-size="10" font-weight="bold">{label}:</text>'
-        svg += f'<text x="{table_x + 80}" y="{y+20}" font-size="12">{value}</text>'
+    # --- KORREKTUR HIER ---
+    # Wir definieren eine Funktion, die den String ZURÜCKGIBT, anstatt "svg" direkt zu ändern.
+    def get_row_svg(y, label, value):
+        row_str = f'<text x="{table_x + 5}" y="{y+20}" font-size="10" font-weight="bold">{label}:</text>'
+        row_str += f'<text x="{table_x + 80}" y="{y+20}" font-size="12">{value}</text>'
+        return row_str
 
-    draw_row(10, "Projekt", meta_data["project"])
-    draw_row(40, "Durchführung", meta_data["execution"])
-    draw_row(70, "Brunnentyp", meta_data["type"])
-    draw_row(100, "Datum", meta_data["date"])
+    # Jetzt fügen wir das Ergebnis an "svg" an
+    svg += get_row_svg(10, "Projekt", meta_data["project"])
+    svg += get_row_svg(40, "Durchführung", meta_data["execution"])
+    svg += get_row_svg(70, "Brunnentyp", meta_data["type"])
+    svg += get_row_svg(100, "Datum", meta_data["date"])
+    # -----------------------
 
     # Titel unter dem Kopf
     svg += f'<text x="{total_width/2}" y="160" font-size="18" font-weight="bold" text-anchor="middle">Bohrprofil</text>'
