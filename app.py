@@ -1,339 +1,314 @@
 import streamlit as st
 import pandas as pd
+from streamlit_folium import st_folium
+import folium
+from geopy.geocoders import Nominatim
+from geopy.extra.rate_limiter import RateLimiter
 import html
-from io import BytesIO
 
 # --- KONFIGURATION ---
-st.set_page_config(page_title="Profi Brunnen-Profil", layout="wide")
+st.set_page_config(page_title="Bohrprotokoll & Brunnenausbau Generator", layout="wide")
 
-HAS_PDF_LIBS = False
-try:
-    from svglib.svglib import svg2rlg
-    from reportlab.graphics import renderPDF
-    HAS_PDF_LIBS = True
-except ImportError:
-    pass
+# Initialisiere Session State für Geodaten
+if 'lat' not in st.session_state: st.session_state.lat = 52.42751
+if 'lon' not in st.session_state: st.session_state.lon = 13.1905
 
-st.title("🕳️ Brunnen-Profil Generator (Geologie & Ausbau)")
+st.title("🕳️ Professioneller Bohrprofil-Generator (DIN 4023 Stil)")
 
-# --- 1. DATEN-EINGABE (Jetzt mit Tabs für Geologie & Ausbau) ---
-
-with st.expander("📝 Projekt-Daten (Kopfbogen)", expanded=False):
-    col_h1, col_h2, col_h3 = st.columns(3)
-    with col_h1:
-        company_name = st.text_input("Firmenname", value="S&K Brunnenbohr GmbH")
-        address = st.text_input("Anschrift/Standort", value="Industrieparkstrasse 13")
-    with col_h2:
-        project_name = st.text_input("Projekt", value="Musterprojekt")
-        execution = st.text_input("Ausführung", value="Max Mustermann")
-    with col_h3:
-        well_type = st.text_input("Brunnentyp", value="Entnahmebrunnen")
-        date_str = st.date_input("Datum").strftime("%d.%m.%Y")
-
-col_input, col_preview = st.columns([1, 1.5])
-
-with col_input:
-    tab1, tab2, tab3 = st.tabs(["🪨 Geologie", "🔧 Rohrtour", "🏗️ Ringraum"])
+# --- TEIL 1: KOPFBLATT & KARTE ---
+with st.expander("1. Kopfblatt & Standort (Seite 1)", expanded=True):
+    col_map, col_data = st.columns([1, 1])
     
-    # --- TAB 1: GEOLOGIE ---
-    with tab1:
-        st.caption("Bodenschichten definieren")
-        default_geo = [
-            {"von": 0.0, "bis": 0.4, "material": "Mutterboden", "txt": "Mutterboden"},
-            {"von": 0.4, "bis": 3.5, "material": "Sand/Kies", "txt": "Sand, Kies"},
-            {"von": 3.5, "bis": 4.6, "material": "Lehm", "txt": "Sand, lehmig"},
-            {"von": 4.6, "bis": 14.3, "material": "Kies", "txt": "Kies, Sand"},
-            {"von": 14.3, "bis": 18.2, "material": "Kies_Wasser", "txt": "Kies, wasserführend"},
-            {"von": 18.2, "bis": 21.0, "material": "Fels", "txt": "Fels"},
-        ]
-        df_geo = st.data_editor(
-            pd.DataFrame(default_geo),
-            num_rows="dynamic",
-            column_config={
-                "material": st.column_config.SelectboxColumn("Material", options=["Mutterboden", "Sand/Kies", "Lehm", "Kies", "Kies_Wasser", "Fels"], required=True),
-                "von": st.column_config.NumberColumn("Von", format="%.2f"),
-                "bis": st.column_config.NumberColumn("Bis", format="%.2f"),
-                "txt": st.column_config.TextColumn("Beschriftung")
-            }, use_container_width=True, key="editor_geo"
-        )
-
-    # --- TAB 2: ROHRTOUR (Inneres) ---
-    with tab2:
-        st.caption("Rohre von oben nach unten")
-        default_pipe = [
-            {"von": 0.0, "bis": 15.0, "typ": "Vollrohr", "dn": 150},
-            {"von": 15.0, "bis": 20.0, "typ": "Filterrohr", "dn": 150},
-            {"von": 20.0, "bis": 21.0, "typ": "Sumpfrohr", "dn": 150},
-        ]
-        df_pipe = st.data_editor(
-            pd.DataFrame(default_pipe),
-            num_rows="dynamic",
-            column_config={
-                "typ": st.column_config.SelectboxColumn("Typ", options=["Vollrohr", "Filterrohr", "Sumpfrohr"], required=True),
-                "von": st.column_config.NumberColumn("Von", format="%.2f"),
-                "bis": st.column_config.NumberColumn("Bis", format="%.2f"),
-                "dn": st.column_config.NumberColumn("DN (mm)", step=1)
-            }, use_container_width=True, key="editor_pipe"
-        )
+    with col_data:
+        st.subheader("Stammdaten")
+        # Daten aus Quelle [cite: 8]
+        projekt = st.text_input("Projekt / Bohrung", value="Notwasserbrunnen ZE079-905")
+        ort = st.text_input("Ort / Adresse", value="Wiesenschlag ggü 4, 14129 Berlin")
         
-        st.divider()
-        st.caption("Wasserstände & Pumpe")
-        c1, c2, c3 = st.columns(3)
-        ws_ruhe = c1.number_input("Ruhewasser (m)", value=11.80)
-        ws_absenk = c2.number_input("Abgesenkt (m)", value=13.10)
-        pump_depth = c3.number_input("Pumpentiefe (m)", value=18.50)
+        if st.button("📍 Adresse suchen & Karte laden"):
+            try:
+                geolocator = Nominatim(user_agent="brunnen_app")
+                location = geolocator.geocode(ort)
+                if location:
+                    st.session_state.lat = location.latitude
+                    st.session_state.lon = location.longitude
+                    st.success(f"Gefunden: {location.address}")
+                else:
+                    st.error("Adresse nicht gefunden.")
+            except Exception as e:
+                st.error(f"Fehler bei Geocoding: {e}")
 
-    # --- TAB 3: RINGRAUM (Äußeres) ---
-    with tab3:
-        st.caption("Füllung zwischen Bohrloch und Rohr")
-        default_annulus = [
-            {"von": 0.0, "bis": 2.0, "mat": "Bohrgut"},
-            {"von": 2.0, "bis": 5.0, "mat": "Tonsperre"},
-            {"von": 5.0, "bis": 11.5, "mat": "Bohrgut"},
-            {"von": 11.5, "bis": 14.0, "mat": "Tonsperre"},
-            {"von": 14.0, "bis": 21.0, "mat": "Filterkies"},
+        c1, c2 = st.columns(2)
+        auftraggeber = c1.text_input("Auftraggeber", value="Berliner Wasserbetriebe")
+        bohrfirma = c2.text_input("Bohrunternehmer", value="Ackermann KG")
+        
+        c3, c4 = st.columns(2)
+        datum_start = c3.date_input("Beginn", value=pd.to_datetime("2025-10-06"))
+        datum_ende = c4.date_input("Ende", value=pd.to_datetime("2025-10-08"))
+        
+        # Technische Daten [cite: 8]
+        st.markdown("---")
+        c5, c6 = st.columns(2)
+        ansatzpunkt = c5.number_input("Höhe Ansatzpunkt (m u. GOK)", value=0.0)
+        endteufe = c6.number_input("Endteufe (m)", value=45.0)
+        bohrverfahren = st.text_input("Bohrverfahren", value="Spülbohren")
+        bohrdurchmesser = st.number_input("Bohrdurchmesser (mm)", value=330)
+
+    with col_map:
+        st.subheader("Lageplan")
+        # Karte rendern [cite: 9]
+        m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16)
+        folium.Marker(
+            [st.session_state.lat, st.session_state.lon], 
+            popup=projekt, 
+            tooltip="Bohrpunkt"
+        ).add_to(m)
+        st_data = st_folium(m, width="100%", height=400)
+        st.caption(f"Koordinaten: {st.session_state.lat:.5f}, {st.session_state.lon:.5f}")
+
+# --- TEIL 2: SCHICHTENVERZEICHNIS (Eingabe wie Seite 2/3) ---
+with st.expander("2. Schichtenverzeichnis (Seite 2 & 3)", expanded=True):
+    st.info("Geben Sie hier die Geologie ein, analog zur Tabelle im PDF.")
+    
+    # Standardwerte basierend auf PDF Seite 2 
+    default_geologie = [
+        {"Tiefe bis (m)": 14.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Farbe": "braun", "Konsistenz": "erdfeucht", "Kurzzeichen": "mS", "Gruppe": "SE", "Kalk": "0"},
+        {"Tiefe bis (m)": 29.00, "Benennung": "Mudde", "Zusatz": "organisch", "Farbe": "dunkelbraun", "Konsistenz": "steif", "Kurzzeichen": "Mu", "Gruppe": "SU*-TL", "Kalk": "+"},
+        {"Tiefe bis (m)": 33.00, "Benennung": "Sand", "Zusatz": "feinsandig", "Farbe": "grau", "Konsistenz": "nass", "Kurzzeichen": "fS", "Gruppe": "SE", "Kalk": "+"},
+        {"Tiefe bis (m)": 39.00, "Benennung": "Mergel", "Zusatz": "Geschiebemergel", "Farbe": "grau", "Konsistenz": "steif", "Kurzzeichen": "Mg", "Gruppe": "SU*-TL", "Kalk": "+"},
+        {"Tiefe bis (m)": 46.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Farbe": "grau", "Konsistenz": "nass", "Kurzzeichen": "mS", "Gruppe": "SE", "Kalk": "+"},
+    ]
+    
+    df_geo = st.data_editor(
+        pd.DataFrame(default_geologie),
+        num_rows="dynamic",
+        column_config={
+            "Tiefe bis (m)": st.column_config.NumberColumn(format="%.2f"),
+            "Benennung": st.column_config.SelectboxColumn("Hauptbodenart", options=["Mutterboden", "Sand", "Kies", "Mudde", "Mergel", "Ton", "Schluff"], required=True),
+            "Farbe": st.column_config.SelectboxColumn(options=["braun", "dunkelbraun", "grau", "schwarz", "gelb"]),
+            "Kalk": st.column_config.SelectboxColumn(options=["0", "+", "++", "+++"])
+        },
+        use_container_width=True,
+        key="geo_editor"
+    )
+
+# --- TEIL 3: BRUNNENAUSBAU (Seite 4) ---
+with st.expander("3. Brunnenausbau & Ringraum (Daten für Grafik)", expanded=True):
+    col_rohr, col_ring = st.columns(2)
+    
+    with col_rohr:
+        st.subheader("Rohrtour (Innen)")
+        # Daten aus [cite: 20]
+        default_rohre = [
+            {"Von (m)": 0.00, "Bis (m)": 40.00, "Typ": "Vollrohr", "DN (mm)": 150},
+            {"Von (m)": 40.00, "Bis (m)": 44.00, "Typ": "Filterrohr", "DN (mm)": 150}, # angepasst an Bild Seite 4
+            {"Von (m)": 44.00, "Bis (m)": 45.00, "Typ": "Sumpfrohr", "DN (mm)": 150}
         ]
-        df_annulus = st.data_editor(
-            pd.DataFrame(default_annulus),
-            num_rows="dynamic",
+        df_rohr = st.data_editor(pd.DataFrame(default_rohre), num_rows="dynamic", use_container_width=True, key="rohr_editor")
+        
+        st.markdown("**Wasserstände [cite: 20]**")
+        ws_ruhe = st.number_input("Ruhewasserspiegel (m u. GOK)", value=14.70)
+    
+    with col_ring:
+        st.subheader("Ringraum (Außen)")
+        # Daten aus [cite: 20] und Bild Seite 4 [cite: 82, 101, 108, 120]
+        default_ringraum = [
+            {"Von (m)": 0.00, "Bis (m)": 14.00, "Material": "Filterkies"},
+            {"Von (m)": 14.00, "Bis (m)": 29.00, "Material": "Tonsperre"}, # Tf, Mu laut Grafik
+            {"Von (m)": 29.00, "Bis (m)": 33.00, "Material": "Filterkies"},
+            {"Von (m)": 33.00, "Bis (m)": 39.00, "Material": "Tonsperre"},
+            {"Von (m)": 39.00, "Bis (m)": 45.00, "Material": "Filterkies"}
+        ]
+        df_ring = st.data_editor(
+            pd.DataFrame(default_ringraum), 
+            num_rows="dynamic", 
             column_config={
-                "mat": st.column_config.SelectboxColumn("Material", options=["Bohrgut", "Tonsperre", "Filterkies", "Zement"], required=True),
-                "von": st.column_config.NumberColumn("Von", format="%.2f"),
-                "bis": st.column_config.NumberColumn("Bis", format="%.2f"),
-            }, use_container_width=True, key="editor_annulus"
+                "Material": st.column_config.SelectboxColumn(options=["Filterkies", "Tonsperre", "Zement", "Bohrgut"])
+            },
+            use_container_width=True, 
+            key="ring_editor"
         )
 
+# --- TEIL 4: SVG GENERIERUNG ---
 
-# --- SVG ENGINE ---
-
-def generate_svg(df_geo, df_pipe, df_annulus, meta_data, extras):
-    # --- SETUP ---
-    scale_y = 35  # Pixel pro Meter (etwas kleiner damit mehr drauf passt)
-    max_depth = max(df_geo["bis"].max() if not df_geo.empty else 0, df_pipe["bis"].max() if not df_pipe.empty else 0)
-    if max_depth == 0: max_depth = 10
+def generate_svg_din4023(geo_data, pipe_data, ring_data, meta, width=800):
+    # Skalierung: Seite 4 nutzt 1:240 [cite: 72]
+    # Wir nehmen 4 Pixel pro Meter für gute Lesbarkeit am Bildschirm, aber layouten es wie DIN
+    scale_y = 15 # Pixel pro Meter Tiefe
     
-    # Layout-Konstanten X-Achse
-    margin_top = 220
+    max_depth = max(geo_data["Tiefe bis (m)"].max() if not geo_data.empty else 0, 45)
+    header_height = 200
+    footer_height = 100
+    total_height = header_height + (max_depth * scale_y) + footer_height
     
-    # Spalte 1: Geologie
-    axis_geo_x = 60
-    geo_x = 130
-    geo_width = 90
+    # Spaltenbreiten (Layout Seite 4)
+    col_depth_x = 50
+    col_geo_x = 100
+    col_geo_w = 120
+    col_tech_x = 300 # Start technischer Ausbau
+    center_tech = 400
     
-    # Spalte 2: Ausbau
-    build_center_x = 450 # Mittelachse des Brunnens
-    hole_radius = 50     # Radius Bohrloch (visuell)
-    pipe_radius = 25     # Radius Rohr (visuell)
+    svg = f'<svg width="{width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">'
     
-    total_width = 800
-    total_height = margin_top + (max_depth * scale_y) + 100
-    
-    svg = f'<svg width="{total_width}" height="{total_height}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">'
-    
-    # --- MUSTER (PATTERNS) ---
+    # --- DEFINITIONEN (Muster/Schraffuren) ---
     svg += '''
     <defs>
-        <pattern id="pat-Sand_Kies" width="10" height="10" patternUnits="userSpaceOnUse">
-             <rect width="10" height="10" fill="#fffacd"/>
-             <circle cx="2" cy="2" r="1" fill="#d4a017" /><circle cx="7" cy="7" r="1" fill="#d4a017" />
+        <pattern id="pat-Sand" width="10" height="10" patternUnits="userSpaceOnUse">
+             <rect width="10" height="10" fill="#fffacd"/> <circle cx="2" cy="2" r="1" fill="#d4a017" /><circle cx="7" cy="7" r="1" fill="#d4a017" />
         </pattern>
-        <pattern id="pat-Lehm" width="10" height="10" patternUnits="userSpaceOnUse">
-             <rect width="10" height="10" fill="#d2b48c" fill-opacity="0.4"/>
-             <path d="M0,10 l10,-10" stroke="#8b4513" stroke-width="1"/>
+        <pattern id="pat-Mudde" width="10" height="10" patternUnits="userSpaceOnUse">
+             <rect width="10" height="10" fill="#dcdcdc"/>
+             <line x1="0" y1="5" x2="10" y2="5" stroke="black" stroke-width="2"/>
         </pattern>
-        <pattern id="pat-Fels" width="20" height="20" patternUnits="userSpaceOnUse">
-             <rect width="20" height="20" fill="#808080" fill-opacity="0.3"/>
-             <path d="M0,0 L20,20 M20,0 L0,20" stroke="#333" stroke-width="1"/>
+        <pattern id="pat-Mergel" width="10" height="10" patternUnits="userSpaceOnUse">
+             <rect width="10" height="10" fill="#e0e0e0"/>
+             <path d="M0,0 L10,10 M10,0 L0,10" stroke="#555" stroke-width="0.5"/>
         </pattern>
         <pattern id="pat-Mutterboden" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#5c4033"/></pattern>
-        <pattern id="pat-Kies" width="10" height="10" patternUnits="userSpaceOnUse">
-             <rect width="10" height="10" fill="#fffacd"/>
-             <circle cx="5" cy="5" r="2" fill="orange" />
-        </pattern>
-        <pattern id="pat-Kies_Wasser" width="10" height="10" patternUnits="userSpaceOnUse">
-             <rect width="10" height="10" fill="#e0ffff"/>
-             <circle cx="3" cy="3" r="1.5" fill="blue" /><circle cx="8" cy="8" r="1.5" fill="blue" />
-        </pattern>
         
-        <pattern id="pat-Filter" width="10" height="4" patternUnits="userSpaceOnUse">
-            <rect width="10" height="4" fill="white"/>
-            <line x1="0" y1="2" x2="10" y2="2" stroke="black" stroke-width="1" />
+        <pattern id="pat-Filterkies" width="6" height="6" patternUnits="userSpaceOnUse">
+            <rect width="6" height="6" fill="#fff"/>
+            <circle cx="3" cy="3" r="1.5" fill="orange" />
         </pattern>
         <pattern id="pat-Tonsperre" width="8" height="8" patternUnits="userSpaceOnUse">
             <rect width="8" height="8" fill="#8b4513"/>
-            <path d="M0,8 l8,-8" stroke="white" stroke-width="1" opacity="0.5"/>
+            <path d="M0,8 l8,-8" stroke="white" stroke-width="1"/>
         </pattern>
-        <pattern id="pat-Filterkies" width="6" height="6" patternUnits="userSpaceOnUse">
-            <rect width="6" height="6" fill="#fff"/>
-            <circle cx="3" cy="3" r="1" fill="#555" />
-        </pattern>
-        <pattern id="pat-Bohrgut" width="10" height="10" patternUnits="userSpaceOnUse">
-            <rect width="10" height="10" fill="#ccc"/>
-            <path d="M0,0 l5,5 M5,0 l-5,5" stroke="#999" stroke-width="1"/>
+        <pattern id="pat-Filterrohr" width="10" height="4" patternUnits="userSpaceOnUse">
+            <rect width="10" height="4" fill="white"/>
+            <line x1="2" y1="2" x2="8" y2="2" stroke="black" stroke-width="1" />
         </pattern>
     </defs>
     '''
     
-    # --- HELPER ---
-    def safe(t): return html.escape(str(t))
+    # --- HEADER (Kopfblatt Info im SVG) ---
+    svg += f'<rect x="10" y="10" width="{width-20}" height="{header_height-20}" fill="none" stroke="black"/>'
+    svg += f'<text x="20" y="40" font-size="20" font-weight="bold" fill="green">Bohr2000</text>' # Logo Fake
+    svg += f'<text x="20" y="70" font-size="16" font-weight="bold">{meta["firma"]}</text>'
+    svg += f'<text x="200" y="40" font-size="14" font-weight="bold">Zeichnerische Darstellung nach DIN 4023</text>'
+    svg += f'<text x="200" y="60" font-size="12">Projekt: {meta["projekt"]}</text>'
+    svg += f'<text x="200" y="80" font-size="12">Ort: {meta["ort"]}</text>'
+    svg += f'<text x="600" y="40" font-size="12">Datum: {meta["datum"]}</text>'
+    svg += f'<text x="600" y="60" font-size="12">Maßstab: 1:240</text>'
 
-    # --- KOPFBOGEN ---
-    head_h = 130
-    svg += f'<rect x="10" y="10" width="{total_width-20}" height="{head_h}" fill="none" stroke="black" stroke-width="2"/>'
-    svg += f'<text x="30" y="50" font-size="20" font-weight="bold" fill="black">{safe(meta_data["company"])}</text>'
-    svg += f'<text x="30" y="75" font-size="12" fill="black">{safe(meta_data["address"])}</text>'
-    svg += f'<line x1="10" y1="{head_h+10}" x2="{total_width-10}" y2="{head_h+10}" stroke="black" stroke-width="2"/>'
+    # --- HINTERGRUND & LINIE ---
+    start_y = header_height
+    # Vertikale Linien
+    svg += f'<line x1="{col_geo_x}" y1="{start_y}" x2="{col_geo_x}" y2="{total_height-footer_height}" stroke="black"/>'
+    svg += f'<line x1="{col_geo_x+col_geo_w}" y1="{start_y}" x2="{col_geo_x+col_geo_w}" y2="{total_height-footer_height}" stroke="black"/>'
     
-    # Tabelle rechts
-    t_x = 450
-    svg += f'<line x1="{t_x}" y1="10" x2="{t_x}" y2="{head_h+10}" stroke="black" stroke-width="1"/>'
-    row_h = head_h/4
-    for i in range(1,4):
-        y = 10 + i*row_h
-        svg += f'<line x1="{t_x}" y1="{y}" x2="{total_width-10}" y2="{y}" stroke="black" stroke-width="0.5"/>'
+    # --- GEOLOGIE (Seite 4 Links) ---
+    last_y = start_y
+    last_depth = 0
     
-    def draw_row(idx, lab, val):
-        y = 10 + idx*row_h + row_h/2 + 4
-        return f'<text x="{t_x+10}" y="{y}" font-size="10" font-weight="bold">{safe(lab)}:</text><text x="{t_x+100}" y="{y}" font-size="12">{safe(val)}</text>'
+    for _, row in geo_data.iterrows():
+        depth = float(row["Tiefe bis (m)"])
+        h = (depth - last_depth) * scale_y
+        
+        # Muster Auswahl
+        pat = "pat-Sand"
+        if "Mudde" in row["Benennung"]: pat = "pat-Mudde"
+        if "Mergel" in row["Benennung"]: pat = "pat-Mergel"
+        if "Mutterboden" in row["Benennung"]: pat = "pat-Mutterboden"
+        
+        # Balken zeichnen
+        svg += f'<rect x="{col_geo_x}" y="{last_y}" width="{col_geo_w}" height="{h}" fill="url(#{pat})" stroke="black" stroke-width="0.5"/>'
+        
+        # Beschriftung Tiefe & Kurzzeichen
+        svg += f'<text x="{col_geo_x-5}" y="{last_y+h}" font-size="10" text-anchor="end">{depth:.2f}</text>'
+        svg += f'<line x1="{col_geo_x-10}" y1="{last_y+h}" x2="{col_geo_x}" y2="{last_y+h}" stroke="black"/>'
+        
+        # Kurzzeichen (groß, mittig wie im PDF bei "Mu") [cite: 85, 90]
+        kz = row["Kurzzeichen"]
+        if pd.notna(kz):
+            svg += f'<text x="{col_geo_x+col_geo_w/2}" y="{last_y+h/2}" font-size="18" text-anchor="middle" fill="black" stroke="white" stroke-width="0.5" paint-order="stroke">{kz}</text>'
+
+        last_y += h
+        last_depth = depth
+
+    # --- TECHNISCHER AUSBAU (Seite 4 Rechts) ---
+    # Bohrloch (Ringraum)
+    last_ring_y = start_y
+    last_ring_depth = 0
+    hole_radius = 60 # Visuelle Breite
     
-    svg += draw_row(0,"Projekt", meta_data["project"])
-    svg += draw_row(1,"Durchführung", meta_data["execution"])
-    svg += draw_row(2,"Typ", meta_data["type"])
-    svg += draw_row(3,"Datum", meta_data["date"])
+    for _, row in ring_data.iterrows():
+        depth_to = float(row["Bis (m)"])
+        depth_from = float(row["Von (m)"])
+        h = (depth_to - depth_from) * scale_y
+        y = start_y + (depth_from * scale_y)
+        
+        mat = "pat-Filterkies"
+        if "Ton" in row["Material"]: mat = "pat-Tonsperre"
+        
+        # Zeichnen (Ringraum = Volle Breite - Rohr) -> Hier vereinfacht: Volle Breite als Hintergrund
+        svg += f'<rect x="{center_tech - hole_radius}" y="{y}" width="{hole_radius*2}" height="{h}" fill="url(#{mat})" stroke="black"/>'
+        
+        # Beschriftung Ringraum (rechts) [cite: 82, 101]
+        svg += f'<text x="{center_tech + hole_radius + 10}" y="{y+h}" font-size="10">{depth_to:.2f} {row["Material"]}</text>'
+        svg += f'<line x1="{center_tech + hole_radius}" y1="{y+h}" x2="{center_tech + hole_radius + 5}" y2="{y+h}" stroke="black"/>'
 
-    # --- ÜBERSCHRIFTEN ---
-    title_y = margin_top - 40
-    svg += f'<text x="{geo_x + geo_width/2}" y="{title_y}" font-size="18" font-weight="bold" text-anchor="middle">Bohrprofil</text>'
-    svg += f'<text x="{build_center_x}" y="{title_y}" font-size="18" font-weight="bold" text-anchor="middle">Brunnenausbau</text>'
+    # Rohre (Innen)
+    pipe_radius = 30
+    for _, row in pipe_data.iterrows():
+        depth_to = float(row["Bis (m)"])
+        depth_from = float(row["Von (m)"])
+        h = (depth_to - depth_from) * scale_y
+        y = start_y + (depth_from * scale_y)
+        
+        fill = "white"
+        if "Filter" in row["Typ"]: fill = "url(#pat-Filterrohr)"
+        elif "Sumpf" in row["Typ"]: fill = "#ddd"
+        
+        svg += f'<rect x="{center_tech - pipe_radius}" y="{y}" width="{pipe_radius*2}" height="{h}" fill="{fill}" stroke="black" stroke-width="1.5"/>'
+        
+        # Beschriftung Rohr (rechts, leicht versetzt) 
+        if "Filter" in row["Typ"]:
+             svg += f'<text x="{center_tech + pipe_radius + 80}" y="{y+h-5}" font-size="10" font-style="italic">Schlitzfilter</text>'
 
-    # --- SKALA LINKS ---
-    svg += f'<line x1="{axis_geo_x}" y1="{margin_top}" x2="{axis_geo_x}" y2="{margin_top + max_depth * scale_y}" stroke="black" stroke-width="1" />'
-    for i in range(int(max_depth) + 1):
-        y = i * scale_y + margin_top
-        svg += f'<path d="M{axis_geo_x},{y} l-5,-5 l10,0 z" fill="white" stroke="black"/>'
-        svg += f'<text x="{axis_geo_x - 10}" y="{y-2}" font-size="10" text-anchor="end">-{i}.00m</text>'
-        # Hilfslinie quer rüber
-        if i % 5 == 0 and i > 0:
-             svg += f'<line x1="{axis_geo_x}" y1="{y}" x2="{total_width-50}" y2="{y}" stroke="#ddd" stroke-dasharray="4,4"/>'
+    # --- WASSERSTÄNDE  ---
+    if meta["ws_ruhe"]:
+        ws_y = start_y + (meta["ws_ruhe"] * scale_y)
+        svg += f'<line x1="{col_geo_x-20}" y1="{ws_y}" x2="{col_geo_x+20}" y2="{ws_y}" stroke="blue" stroke-width="1.5"/>'
+        svg += f'<path d="M{col_geo_x},{ws_y} l-5,-8 l10,0 z" fill="white" stroke="blue"/>'
+        svg += f'<text x="{col_geo_x-25}" y="{ws_y}" font-size="10" fill="blue" text-anchor="end">{meta["ws_ruhe"]:.2f}</text>'
 
-    # --- TEIL 1: GEOLOGIE ZEICHNEN ---
-    for _, row in df_geo.iterrows():
-        try:
-            h = (float(row["bis"]) - float(row["von"])) * scale_y
-            y = float(row["von"]) * scale_y + margin_top
-            mat = row["material"].replace("/","_").replace(" ","_")
-            
-            # Block
-            svg += f'<rect x="{geo_x}" y="{y}" width="{geo_width}" height="{h}" fill="url(#pat-{mat})" stroke="black"/>'
-            # Tiefe
-            svg += f'<text x="{geo_x-5}" y="{y+h}" font-size="10" text-anchor="end" dominant-baseline="middle">{float(row["bis"]):.2f}m</text>'
-            # Text
-            tx_y = y + h/2
-            svg += f'<line x1="{geo_x+geo_width}" y1="{tx_y}" x2="{geo_x+geo_width+10}" y2="{tx_y}" stroke="#666"/>'
-            svg += f'<text x="{geo_x+geo_width+15}" y="{tx_y}" font-size="12" dominant-baseline="middle">{safe(row["txt"])}</text>'
-        except: continue
-
-    # --- TEIL 2: BRUNNENAUSBAU ZEICHNEN ---
-    
-    # A) Ringraum (Zwiebelschale außen)
-    # Wir zeichnen Rechtecke von build_center_x nach links und rechts
-    for _, row in df_annulus.iterrows():
-        try:
-            h = (float(row["bis"]) - float(row["von"])) * scale_y
-            y = float(row["von"]) * scale_y + margin_top
-            mat = row["mat"].replace("/","_") # Filterkies, Tonsperre...
-            
-            # Volle Breite des Bohrlochs
-            svg += f'<rect x="{build_center_x - hole_radius}" y="{y}" width="{hole_radius*2}" height="{h}" fill="url(#pat-{mat})" stroke="black" stroke-width="0.5"/>'
-            
-            # Beschriftung Ringraum (rechts außen)
-            if h > 10: # Nur wenn hoch genug
-                svg += f'<line x1="{build_center_x + hole_radius}" y1="{y+h/2}" x2="{build_center_x + hole_radius + 40}" y2="{y+h/2}" stroke="black" stroke-width="0.5"/>'
-                svg += f'<text x="{build_center_x + hole_radius + 45}" y="{y+h/2}" font-size="11" dominant-baseline="middle">{safe(row["mat"])}</text>'
-        except: continue
-
-    # B) Rohrtour (Zentral)
-    last_pipe_bottom = 0
-    for _, row in df_pipe.iterrows():
-        try:
-            depth_to = float(row["bis"])
-            h = (depth_to - float(row["von"])) * scale_y
-            y = float(row["von"]) * scale_y + margin_top
-            typ = row["typ"]
-            dn = row["dn"]
-            last_pipe_bottom = y + h
-            
-            fill = "white"
-            if typ == "Filterrohr": fill = "url(#pat-Filter)"
-            if typ == "Sumpfrohr": fill = "#ddd"
-            
-            # Rohr zeichnen
-            svg += f'<rect x="{build_center_x - pipe_radius}" y="{y}" width="{pipe_radius*2}" height="{h}" fill="{fill}" stroke="black" stroke-width="1.5"/>'
-            
-            # Beschriftung Rohr (links vom Ausbau)
-            svg += f'<line x1="{build_center_x - pipe_radius}" y1="{y+h/2}" x2="{build_center_x - pipe_radius - 20}" y2="{y+h/2}" stroke="black" stroke-width="0.5"/>'
-            svg += f'<text x="{build_center_x - pipe_radius - 25}" y="{y+h/2}" font-size="11" text-anchor="end" dominant-baseline="middle">{typ} DN{dn}</text>'
-            
-            # Tiefe markieren (rechts am Rohr)
-            svg += f'<text x="{build_center_x - pipe_radius - 5}" y="{y+h}" font-size="9" text-anchor="end" dominant-baseline="middle">{depth_to:.2f}m</text>'
-            svg += f'<line x1="{build_center_x - pipe_radius}" y1="{y+h}" x2="{build_center_x - pipe_radius - 5}" y2="{y+h}" stroke="black"/>'
-
-        except: continue
-
-    # C) Bodenkappe
-    if last_pipe_bottom > 0:
-        svg += f'<rect x="{build_center_x - pipe_radius}" y="{last_pipe_bottom}" width="{pipe_radius*2}" height="5" fill="black"/>'
-        svg += f'<text x="{build_center_x + pipe_radius + 5}" y="{last_pipe_bottom + 5}" font-size="10">Bodenkappe</text>'
-
-    # D) Wasserstände
-    # Ruhewasser
-    rw_y = extras["ws_ruhe"] * scale_y + margin_top
-    svg += f'<line x1="{build_center_x+pipe_radius+5}" y1="{rw_y}" x2="{build_center_x+pipe_radius+30}" y2="{rw_y}" stroke="blue" stroke-width="1"/>'
-    svg += f'<path d="M{build_center_x+pipe_radius+15},{rw_y} l-5,-8 l10,0 z" fill="none" stroke="blue"/>' # Dreieck leer
-    svg += f'<text x="{build_center_x+pipe_radius+35}" y="{rw_y}" font-size="10" fill="blue" dominant-baseline="middle">RW {extras["ws_ruhe"]:.2f}m</text>'
-
-    # Absenkung
-    aw_y = extras["ws_absenk"] * scale_y + margin_top
-    svg += f'<line x1="{build_center_x+pipe_radius+5}" y1="{aw_y}" x2="{build_center_x+pipe_radius+30}" y2="{aw_y}" stroke="blue" stroke-width="1"/>'
-    svg += f'<path d="M{build_center_x+pipe_radius+15},{aw_y} l-5,-8 l10,0 z" fill="blue" stroke="blue"/>' # Dreieck voll
-    svg += f'<text x="{build_center_x+pipe_radius+35}" y="{aw_y+10}" font-size="10" fill="blue" dominant-baseline="middle">AW {extras["ws_absenk"]:.2f}m</text>'
-
-    # E) Pumpe
-    p_y = extras["pump_depth"] * scale_y + margin_top
-    # Symbol Pumpe (Kreis mit Dreieck drin)
-    svg += f'<circle cx="{build_center_x}" cy="{p_y}" r="12" fill="white" stroke="black" stroke-width="2"/>'
-    svg += f'<path d="M{build_center_x},{p_y-8} l-7,12 l14,0 z" fill="black"/>'
-    svg += f'<line x1="{build_center_x}" y1="{p_y-12}" x2="{build_center_x}" y2="{p_y-100}" stroke="black" stroke-width="2"/>' # Steigleitung
-    svg += f'<text x="{build_center_x+15}" y="{p_y}" font-size="11" font-weight="bold">Pumpe ({extras["pump_depth"]:.2f}m)</text>'
+    # --- FOOTER ---
+    foot_y = total_height - 60
+    svg += f'<rect x="10" y="{foot_y}" width="{width-20}" height="50" fill="none" stroke="black"/>'
+    svg += f'<text x="20" y="{foot_y+30}" font-size="24" font-weight="bold">{meta["firma"]}</text>'
+    svg += f'<text x="400" y="{foot_y+30}" font-size="16">Tel.: 030-7822363</text>'
 
     svg += '</svg>'
     return svg
 
-# --- 4. OUTPUT ---
-with col_preview:
-    st.subheader("Vorschau")
-    
-    meta_data = {
-        "company": company_name, "address": address, 
-        "project": project_name, "execution": execution, 
-        "type": well_type, "date": date_str
-    }
-    extras = {
-        "ws_ruhe": st.session_state.get("ws_ruhe", 11.80) if 'ws_ruhe' not in st.session_state else ws_ruhe,
-        "ws_absenk": st.session_state.get("ws_absenk", 13.10) if 'ws_absenk' not in st.session_state else ws_absenk,
-        "pump_depth": st.session_state.get("pump_depth", 18.50) if 'pump_depth' not in st.session_state else pump_depth
-    } # Fallback Logik für Session State
+# --- OUTPUT BEREICH ---
+st.divider()
+st.subheader("4. Generierte Ergebnisse")
 
-    if not df_geo.empty:
-        svg_string = generate_svg(df_geo, df_pipe, df_annulus, meta_data, extras)
-        st.components.v1.html(svg_string, height=900, scrolling=True)
+meta_data = {
+    "projekt": projekt,
+    "ort": ort,
+    "firma": bohrfirma,
+    "datum": f"{datum_start.strftime('%d.%m.%y')} - {datum_ende.strftime('%d.%m.%y')}",
+    "ws_ruhe": ws_ruhe
+}
+
+if not df_geo.empty:
+    svg_code = generate_svg_din4023(df_geo, df_rohr, df_ring, meta_data)
+    
+    c_prev, c_down = st.columns([2, 1])
+    with c_prev:
+        st.markdown("### Vorschau (Seite 4)")
+        st.image(svg_code, use_column_width=True) # Trick: Streamlit rendert SVG Strings oft direkt oder via HTML
+        st.components.v1.html(svg_code, height=800, scrolling=True)
         
-        st.download_button("📥 SVG Plan herunterladen", svg_string, f"{project_name}_Complete.svg", "image/svg+xml")
-        
-        if HAS_PDF_LIBS:
-            try:
-                drawing = svg2rlg(BytesIO(svg_string.encode('utf-8')))
-                pdf_bytes = BytesIO()
-                renderPDF.drawToFile(drawing, pdf_bytes)
-                st.download_button("📄 PDF Plan herunterladen", pdf_bytes.getvalue(), f"{project_name}.pdf", "application/pdf")
-            except: pass
+    with c_down:
+        st.success("Grafik generiert!")
+        st.download_button(
+            label="💾 SVG Plan herunterladen",
+            data=svg_code,
+            file_name=f"Bohrprofil_{projekt.replace(' ', '_')}.svg",
+            mime="image/svg+xml"
+        )
+        st.info("Hinweis: Das SVG kann in Browsern geöffnet oder in CAD importiert werden.")
