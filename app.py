@@ -124,19 +124,13 @@ def draw_header_on_page(canvas, doc):
     x_line_2 = page_width - margin_right - box_w_akten
     
     # --- GRAUER HINTERGRUND FÜR LOGO ---
-    # Rechteck oben links (Logo-Feld)
-    canvas.setFillColor(colors.whitesmoke) # Leichtes Grau
-    # x, y, width, height
+    canvas.setFillColor(colors.whitesmoke)
     canvas.rect(margin_left, row_line_y, box_w_firma, header_top - row_line_y, fill=1, stroke=0)
     
-    # Rahmenlinien wieder auf Schwarz setzen
     canvas.setStrokeColor(colors.black)
     canvas.setLineWidth(1)
     
-    # Außenrahmen
     canvas.rect(margin_left, header_bottom, page_width - margin_left - margin_right, header_top - header_bottom, fill=0, stroke=1)
-    
-    # Trennlinien
     canvas.line(margin_left, row_line_y, page_width - margin_right, row_line_y) 
     canvas.line(x_line_1, row_line_y, x_line_1, header_top) 
     canvas.line(x_line_2, header_bottom, x_line_2, header_top) 
@@ -213,19 +207,23 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story = []
     styles = getSampleStyleSheet()
     
-    # --- SCHRIFTGRÖSSE FÜR TABELLEN (KLEINER) ---
     style_tab_norm = ParagraphStyle('TabNorm', parent=styles['Normal'], fontSize=8, leading=10)
     style_tab_bold = ParagraphStyle('TabBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     
+    # Kleinerer Stil für die Schichten-Tabelle
+    style_geo_norm = ParagraphStyle('GeoNorm', parent=styles['Normal'], fontSize=7, leading=8)
+    style_geo_bold = ParagraphStyle('GeoBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8)
+    style_geo_header = ParagraphStyle('GeoHeader', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=1) # Center
+    
     style_h2 = styles['Heading2']
     
-    # --- BREITEN ---
     page_width, _ = A4
     available_width = page_width - 4*cm
     col1_width = 5*cm
     col2_width = available_width - col1_width
     
-    # --- TABELLE 1: ALLGEMEINE DATEN ---
+    # --- SEITE 1 ---
+    
     data_block1 = [
         [Paragraph("Bohrung:", style_tab_bold), Paragraph(meta['projekt'], style_tab_norm)],
         [Paragraph("Ort:", style_tab_bold), Paragraph(meta['ort'], style_tab_norm)],
@@ -234,7 +232,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         [Paragraph("Art der Bohrung:", style_tab_bold), Paragraph(meta['art_bohrung'], style_tab_norm)],
         [Paragraph("Höhe des Ansatzpunktes:", style_tab_bold), Paragraph(f"{meta['ansatz']} m u. GOK", style_tab_norm)]
     ]
-    
     t1 = Table(data_block1, colWidths=[col1_width, col2_width])
     t1.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
@@ -247,7 +244,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t1)
     story.append(Spacer(1, 0.5*cm))
     
-    # --- TABELLE 2: AUSFÜHRUNGSDATEN ---
     data_block2 = [
         [Paragraph("Auftraggeber:", style_tab_bold), Paragraph(meta['auftraggeber'], style_tab_norm)],
         [Paragraph("Objekt:", style_tab_bold), Paragraph(meta['objekt'], style_tab_norm)],
@@ -258,7 +254,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         [Paragraph("Bohrverfahren:", style_tab_bold), Paragraph(f"bis {meta['teufe']}m: {meta['verfahren']}", style_tab_norm)],
         [Paragraph("Gitterwerte:", style_tab_bold), Paragraph(f"Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}", style_tab_norm)]
     ]
-    
     t2 = Table(data_block2, colWidths=[col1_width, col2_width])
     t2.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
@@ -271,7 +266,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t2)
     story.append(Spacer(1, 0.5*cm))
     
-    # --- KARTE MIT RAHMEN ---
     if map_image_buffer:
         img = RLImage(map_image_buffer)
         img_width = available_width
@@ -295,24 +289,65 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         
     story.append(PageBreak())
     
-    # Seite 2 (Schichten)
-    table_headers = ["Tiefe bis", "Bodenart", "Zusatz", "Farbe", "Kalk", "Gruppe", "Bemerkung"]
-    table_data = [table_headers]
+    # --- SEITE 2: SCHICHTENVERZEICHNIS (NACH DIN 4022 STRUKTUR) ---
+    
+    # DIN Header Definition (Spalten 1-6)
+    # Zeile 1: Nummern
+    h_row1 = [
+        Paragraph("1", style_geo_header), 
+        Paragraph("2", style_geo_header), 
+        Paragraph("3", style_geo_header), 
+        Paragraph("4", style_geo_header), 
+        Paragraph("5", style_geo_header), 
+        Paragraph("6", style_geo_header)
+    ]
+    
+    # Zeile 2: Hauptbeschriftung
+    h_row2 = [
+        Paragraph("Bis<br/>... m<br/>unter<br/>Ansatz-<br/>punkt", style_geo_header),
+        Paragraph("a) Benennung der Bodenart<br/>und Beimengungen<br/>b) Ergänzende Bemerkung<br/>c) Beschaffenheit (Bohrgut)<br/>d) Beschaffenheit (Bohrvorgang)<br/>f) Übliche Benennung<br/>g) Geologische Benennung", style_geo_norm),
+        Paragraph("e) Farbe<br/><br/>h) Gruppe", style_geo_norm),
+        Paragraph("i) Kalk-<br/>gehalt", style_geo_norm),
+        Paragraph("Bemerkungen<br/>Sonderprobe<br/>Wasserführung<br/>Bohrwerkzeuge<br/>Kernverlust<br/>Sonstiges", style_geo_norm),
+        Paragraph("Entnommene Proben<br/>Tiefe in m<br/>Art / Nr", style_geo_norm)
+    ]
+    
+    # Datenzeilen
+    table_data = [h_row1, h_row2]
+    
     for _, row in df_geo.iterrows():
+        # Text zusammenbauen für Spalte 2 (DIN Beschreibung)
+        text_col2 = f"<b>a) {row['Benennung']}, {row['Zusatz']}</b><br/>"
+        if row['Konsistenz']: text_col2 += f"c) {row['Konsistenz']}<br/>"
+        
+        # Text für Spalte 3 (Farbe/Gruppe)
+        text_col3 = f"e) {row['Farbe']}<br/><br/>h) {row['Gruppe']}"
+        
+        # Zeile hinzufügen
         table_data.append([
-            f"{row['Bis_m']:.2f}",
-            Paragraph(str(row['Benennung']), style_tab_norm),
-            Paragraph(str(row['Zusatz']), style_tab_norm),
-            row['Farbe'], row['Kalk'], row['Gruppe'],
-            Paragraph(str(row['Bemerkung']), style_tab_norm)
+            Paragraph(f"{row['Bis_m']:.2f}", style_geo_norm), # Spalte 1
+            Paragraph(text_col2, style_geo_norm),             # Spalte 2
+            Paragraph(text_col3, style_geo_norm),             # Spalte 3
+            Paragraph(f"i) {row['Kalk']}", style_geo_norm),   # Spalte 4
+            Paragraph(str(row['Bemerkung']), style_geo_norm), # Spalte 5
+            Paragraph("", style_geo_norm)                     # Spalte 6 (Leer)
         ])
-    t_geo = Table(table_data, colWidths=[2*cm, 2.5*cm, 3.5*cm, 2*cm, 1*cm, 2*cm, 3*cm], repeatRows=1)
+    
+    # Spaltenbreiten definieren (Gesamtbreite ca. 17cm)
+    # 1: Tiefe, 2: Text (breit), 3: Farbe/Grp, 4: Kalk, 5: Bem, 6: Proben
+    col_widths = [1.5*cm, 6.5*cm, 2.5*cm, 1.5*cm, 3.0*cm, 2.0*cm]
+    
+    t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
     t_geo.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FontSize', (0,0), (-1,-1), 8), # Schriftgröße auch für die ganze Tabelle setzen
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('ALIGN', (0,0), (5,0), 'CENTER'), # Header zentriert
+        ('BACKGROUND', (0,0), (-1,1), colors.lightgrey), # Header grau
+        ('LEFTPADDING', (0,0), (-1,-1), 2),
+        ('RIGHTPADDING', (0,0), (-1,-1), 2),
+        ('TOPPADDING', (0,0), (-1,-1), 2),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
     ]))
     story.append(t_geo)
     story.append(PageBreak())
@@ -342,7 +377,6 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         st.subheader("Stammdaten")
         logo_upload = st.file_uploader("Firmenlogo (für PDF Header)", type=["png", "jpg", "jpeg"])
         
-        # Block 1 Inputs
         projekt = st.text_input("Projekt / Bohrung", value="Notwasserbrunnen ZE079-905")
         ort = st.text_input("Ort / Adresse", value="Wiesenschlag ggü 4, 14129 Berlin")
         kreis = st.text_input("Kreis", value="Berlin")
@@ -358,7 +392,6 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
             except: pass
 
         st.markdown("---")
-        # Block 2 Inputs
         c1, c2 = st.columns(2)
         auftraggeber = c1.text_input("Auftraggeber", value="Berliner Wasserbetriebe")
         objekt = c2.text_input("Objekt", value="Notbrunnen")
@@ -369,7 +402,6 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         
         datum_str = st.text_input("Bohrzeitraum", value="06.10.25 - 08.10.25")
         
-        # Technische Details
         c5, c6 = st.columns(2)
         bohrdurchmesser = c5.number_input("Durchmesser (mm)", value=330)
         bohrverfahren = c6.text_input("Verfahren", value="Spülbohren")
@@ -378,7 +410,6 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         ansatzpunkt = c7.number_input("Ansatzhöhe (m)", value=0.0)
         endteufe = c8.number_input("Endteufe (m)", value=45.0)
         
-        # Koordinaten für Karte/Text
         st.markdown("---")
         c_coord1, c_coord2 = st.columns(2)
         rechtswert = c_coord1.text_input("Rechtswert (Gitter)", value="378879.57")
@@ -392,11 +423,18 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
 
 with st.expander("2. Schichtenverzeichnis", expanded=False):
     default_geo = [
-        {"Bis_m": 14.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Farbe": "braun", "Kalk": "0", "Gruppe": "SE", "Bemerkung": "schwer zu bohren"},
-        {"Bis_m": 29.00, "Benennung": "Mudde", "Zusatz": "organisch", "Farbe": "dunkelbraun", "Kalk": "+", "Gruppe": "SU*-TL", "Bemerkung": ""},
-        {"Bis_m": 46.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Farbe": "grau", "Kalk": "+", "Gruppe": "SE", "Bemerkung": ""},
+        {"Bis_m": 14.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Konsistenz": "erdfeucht", "Farbe": "braun", "Kalk": "0", "Gruppe": "SE", "Bemerkung": "schwer zu bohren"},
+        {"Bis_m": 29.00, "Benennung": "Mudde", "Zusatz": "organisch", "Konsistenz": "steif", "Farbe": "dunkelbraun", "Kalk": "+", "Gruppe": "SU*-TL", "Bemerkung": ""},
+        {"Bis_m": 46.00, "Benennung": "Sand", "Zusatz": "mittelsandig", "Konsistenz": "nass", "Farbe": "grau", "Kalk": "+", "Gruppe": "SE", "Bemerkung": ""},
     ]
-    df_geo = st.data_editor(pd.DataFrame(default_geo), num_rows="dynamic", use_container_width=True)
+    df_geo = st.data_editor(
+        pd.DataFrame(default_geo), 
+        num_rows="dynamic", 
+        use_container_width=True,
+        column_config={
+            "Konsistenz": st.column_config.SelectboxColumn(options=["nass", "erdfeucht", "steif", "weich", "fest"])
+        }
+    )
 
 with st.expander("3. Ausbau", expanded=False):
     c1, c2 = st.columns(2)
