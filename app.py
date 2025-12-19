@@ -287,8 +287,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         
     story.append(PageBreak())
     
-    # --- SEITE 2: SCHICHTENVERZEICHNIS (NEUES LAYOUT) ---
-    # Spalten: 1=Tiefe, 2=Beschreibung(a-i), 3=Bemerkung, 4,5,6=Proben
+    # --- SEITE 2: SCHICHTENVERZEICHNIS ---
     
     # Header Zeile 1
     h_row1 = [
@@ -299,10 +298,22 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         Paragraph("5", style_geo_header), 
         Paragraph("6", style_geo_header)
     ]
-    # Header Zeile 2 (Merge Header für Proben 4-6 wäre ideal, aber wir simulieren es)
+    
+    # Header Zeile 2 (Hier die Anpassung für a-i)
+    # Spalte 2 enthält nun die Liste der Erläuterungen
+    header_col2_text = """a) Benennung der Bodenart<br/>
+    b) Ergänzende Bemerkung<br/>
+    c) Beschaffenheit nach Bohrgut<br/>
+    d) Beschaffenheit nach Bohrvorgang<br/>
+    e) Farbe<br/>
+    f) Übliche Benennung<br/>
+    g) Geologische Benennung<br/>
+    h) Gruppe<br/>
+    i) Kalkgehalt"""
+    
     h_row2 = [
         Paragraph("Bis<br/>... m", style_geo_header),
-        Paragraph("Benennung der Bodenart und Beimengungen (a-i)", style_geo_norm),
+        Paragraph(header_col2_text, style_geo_norm),
         Paragraph("Bemerkungen<br/>Sonderprobe<br/>Wasserführung", style_geo_norm),
         Paragraph("Probe<br/>Art", style_geo_norm),
         Paragraph("Probe<br/>Nr", style_geo_norm),
@@ -339,7 +350,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         ])
     
     # Breiten anpassen (Gesamtbreite ca. 17cm)
-    # 1: 1.5, 2: 8.5 (sehr breit), 3: 3.0, 4: 1.5, 5: 1.0, 6: 1.5 = 17cm
     col_widths = [1.5*cm, 8.5*cm, 3.0*cm, 1.5*cm, 1.0*cm, 1.5*cm]
     
     t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
@@ -427,7 +437,6 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         st_folium(m, height=350)
 
 with st.expander("2. Schichtenverzeichnis (Eingabe a-i)", expanded=False):
-    # NEU: Spalten a-i + Proben-Spalten
     default_geo = [
         {"Bis_m": 14.00, "a": "mittelsandig", "b": "", "c": "erdfeucht", "d": "mäßig schwer", "e": "braun", "f": "Sand", "g": "", "h": "SE", "i": "0", "Bemerkung": "", "p_art": "", "p_nr": "", "p_tiefe": 0.0},
         {"Bis_m": 29.00, "a": "Tf, Mutterboden", "b": "", "c": "steif", "d": "mäßig schwer", "e": "dunkelbraun", "f": "Mudde", "g": "", "h": "SU*-TL", "i": "+", "Bemerkung": "WSP angebohrt", "p_art": "", "p_nr": "", "p_tiefe": 0.0},
