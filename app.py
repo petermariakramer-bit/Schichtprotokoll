@@ -54,15 +54,23 @@ with st.expander("1. Kopfblatt & Standort (Seite 1)", expanded=True):
         bohrverfahren = st.text_input("Bohrverfahren", value="Spülbohren")
         bohrdurchmesser = st.number_input("Bohrdurchmesser (mm)", value=330)
 
-    with col_map:
+  with col_map:
         st.subheader("Lageplan")
-        # Karte rendern [cite: 9]
+        # Karte rendern
         m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16)
-        folium.Marker(
-            [st.session_state.lat, st.session_state.lon], 
-            popup=projekt, 
+        
+        # ÄNDERUNG: CircleMarker statt Marker für den "roten Punkt"
+        folium.CircleMarker(
+            location=[st.session_state.lat, st.session_state.lon],
+            radius=8,          # Größe des Punktes
+            popup=projekt,
+            color="red",       # Randfarbe
+            fill=True,
+            fill_color="red",  # Füllfarbe
+            fill_opacity=1.0,  # Deckkraft
             tooltip="Bohrpunkt"
         ).add_to(m)
+        
         st_data = st_folium(m, width="100%", height=400)
         st.caption(f"Koordinaten: {st.session_state.lat:.5f}, {st.session_state.lon:.5f}")
 
