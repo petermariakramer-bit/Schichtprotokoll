@@ -212,7 +212,6 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     style_tab_norm = ParagraphStyle('TabNorm', parent=styles['Normal'], fontSize=8, leading=10)
     style_tab_bold = ParagraphStyle('TabBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10)
     
-    # Sehr kleine Schrift für die dichte Schichten-Tabelle
     style_geo_norm = ParagraphStyle('GeoNorm', parent=styles['Normal'], fontSize=7, leading=8)
     style_geo_header = ParagraphStyle('GeoHeader', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=1)
     
@@ -286,83 +285,77 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         
     story.append(PageBreak())
     
-    # --- SEITE 2: SCHICHTENVERZEICHNIS (SPLIT COLUMNS) ---
+    # --- SEITE 2: SCHICHTENVERZEICHNIS (6-SPALTEN LAYOUT) ---
     
-    # 8 Spalten Layout für DIN Konformität
+    # Header Zeile 1
     h_row1 = [
         Paragraph("1", style_geo_header), 
         Paragraph("2", style_geo_header), 
         Paragraph("3", style_geo_header), 
         Paragraph("4", style_geo_header), 
         Paragraph("5", style_geo_header), 
-        Paragraph("6", style_geo_header), 
-        Paragraph("7", style_geo_header),
-        Paragraph("8", style_geo_header)
+        Paragraph("6", style_geo_header)
     ]
     
+    # Header Zeile 2 (Spalte 2 enthält die komplette Legende)
+    header_col2_text = """a) Benennung der Bodenart<br/>
+    b) Ergänzende Bemerkung<br/>
+    c) Beschaffenheit nach Bohrgut<br/>
+    d) Beschaffenheit nach Bohrvorgang<br/>
+    e) Farbe<br/>
+    f) Übliche Benennung<br/>
+    g) Geologische Benennung<br/>
+    h) Gruppe<br/>
+    i) Kalkgehalt"""
+    
     h_row2 = [
-        Paragraph("Bis<br/>m", style_geo_header),
-        Paragraph("a) Benennung<br/>b) Ergänzung", style_geo_norm),
-        Paragraph("c) Bohrgut<br/>d) Vorgang", style_geo_norm),
-        Paragraph("e) Farbe", style_geo_norm),
-        Paragraph("f) Üblich<br/>g) Geol.", style_geo_norm),
-        Paragraph("h) Gruppe<br/>i) Kalk", style_geo_norm),
-        Paragraph("Bemerkung", style_geo_norm),
-        Paragraph("Proben<br/>(Art/Nr/Tiefe)", style_geo_norm)
+        Paragraph("Bis<br/>... m", style_geo_header),
+        Paragraph(header_col2_text, style_geo_norm),
+        Paragraph("Bemerkungen<br/>Sonderprobe<br/>Wasserführung", style_geo_norm),
+        Paragraph("Probe<br/>Art", style_geo_norm),
+        Paragraph("Probe<br/>Nr", style_geo_norm),
+        Paragraph("Probe<br/>Tiefe (m)", style_geo_norm)
     ]
     
     table_data = [h_row1, h_row2]
     
     for _, row in df_geo.iterrows():
-        # Textaufbau für die einzelnen Zellen
-        # Spalte 2: a + b
-        txt_ab = f"a) {row['a']}"
-        if row['b']: txt_ab += f"<br/>b) {row['b']}"
+        # Inhalt Spalte 2 (Alles a-i)
+        col2_text = ""
+        if row['a']: col2_text += f"a) {row['a']}<br/>"
+        if row['b']: col2_text += f"b) {row['b']}<br/>"
+        if row['c']: col2_text += f"c) {row['c']}<br/>"
+        if row['d']: col2_text += f"d) {row['d']}<br/>"
+        if row['e']: col2_text += f"e) {row['e']}<br/>"
+        if row['f']: col2_text += f"f) {row['f']}<br/>"
+        if row['g']: col2_text += f"g) {row['g']}<br/>"
+        if row['h']: col2_text += f"h) {row['h']}<br/>"
+        if row['i']: col2_text += f"i) {row['i']}"
         
-        # Spalte 3: c + d
-        txt_cd = ""
-        if row['c']: txt_cd += f"c) {row['c']}"
-        if row['d']: txt_cd += f"<br/>d) {row['d']}"
+        # Proben Daten (falls leer, nichts anzeigen)
+        p_art = str(row['p_art']) if row['p_art'] else ""
+        p_nr = str(row['p_nr']) if row['p_nr'] else ""
+        p_tiefe = f"{row['p_tiefe']:.2f}" if row['p_tiefe'] > 0 else ""
         
-        # Spalte 4: e
-        txt_e = f"e) {row['e']}" if row['e'] else ""
-        
-        # Spalte 5: f + g
-        txt_fg = ""
-        if row['f']: txt_fg += f"f) {row['f']}"
-        if row['g']: txt_fg += f"<br/>g) {row['g']}"
-        
-        # Spalte 6: h + i
-        txt_hi = ""
-        if row['h']: txt_hi += f"h) {row['h']}"
-        if row['i']: txt_hi += f"<br/>i) {row['i']}"
-        
-        # Spalte 8: Proben (Stacked)
-        txt_proben = ""
-        if row['p_art'] or row['p_nr'] or row['p_tiefe'] > 0:
-            txt_proben = f"{row['p_art']} {row['p_nr']}<br/>{row['p_tiefe']:.2f}m"
-
         table_data.append([
             Paragraph(f"{row['Bis_m']:.2f}", style_geo_norm),
-            Paragraph(txt_ab, style_geo_norm),
-            Paragraph(txt_cd, style_geo_norm),
-            Paragraph(txt_e, style_geo_norm),
-            Paragraph(txt_fg, style_geo_norm),
-            Paragraph(txt_hi, style_geo_norm),
+            Paragraph(col2_text, style_geo_norm),
             Paragraph(str(row['Bemerkung']), style_geo_norm),
-            Paragraph(txt_proben, style_geo_norm)
+            Paragraph(p_art, style_geo_norm),
+            Paragraph(p_nr, style_geo_norm),
+            Paragraph(p_tiefe, style_geo_norm)
         ])
     
-    # Spaltenbreiten (Summe ca 17cm)
-    # 1: 1.3, 2: 3.5, 3: 2.0, 4: 1.5, 5: 2.0, 6: 1.5, 7: 3.2, 8: 2.0
-    col_widths = [1.3*cm, 3.5*cm, 2.0*cm, 1.5*cm, 2.0*cm, 1.5*cm, 3.2*cm, 2.0*cm]
+    # Breiten anpassen für 6 Spalten (Summe ca 17cm)
+    # 1: 1.5, 2: 8.5 (sehr breit), 3: 3.5, 4: 1.5, 5: 1.0, 6: 1.5 = ~17.5cm
+    col_widths = [1.5*cm, 8.5*cm, 3.5*cm, 1.5*cm, 1.0*cm, 1.5*cm]
     
     t_geo = Table(table_data, colWidths=col_widths, repeatRows=2)
     t_geo.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('ALIGN', (0,0), (7,0), 'CENTER'),
+        ('ALIGN', (0,0), (5,0), 'CENTER'),
         ('BACKGROUND', (0,0), (-1,1), colors.lightgrey),
         ('LEFTPADDING', (0,0), (-1,-1), 2),
         ('RIGHTPADDING', (0,0), (-1,-1), 2),
@@ -372,6 +365,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     story.append(t_geo)
     story.append(PageBreak())
     
+    # Seite 3 (Grafik)
     if svg_bytes:
         try:
             drawing = svg2rlg(BytesIO(svg_bytes.encode('utf-8')))
