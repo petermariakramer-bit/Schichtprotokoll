@@ -64,8 +64,12 @@ def generate_svg(data_df, meta_data):
     # --- EINSTELLUNGEN ---
     scale_y = 40  # Pixel pro Meter
     
-    # NEUES LAYOUT:
-    margin_top = 180      # Platz oben
+    # LAYOUT:
+    # head_height ist die Höhe des Kastens.
+    # Wir setzen margin_top (Start der Grafik) deutlich darunter.
+    head_height = 130
+    margin_top = 220      # Tiefer gesetzt, damit Platz für Titel ist
+    
     axis_x = 60           # X-Pos der linken Linie mit den Dreiecken
     profile_x = 160       # X-Pos wo das bunte Profil beginnt
     profile_width = 100   # Breite der bunten Säule
@@ -106,7 +110,6 @@ def generate_svg(data_df, meta_data):
     # --- KOPFBOGEN ---
     def safe(text): return html.escape(str(text))
 
-    head_height = 130
     svg += f'<rect x="10" y="10" width="{total_width-20}" height="{head_height}" fill="none" stroke="black" stroke-width="2"/>'
     
     # Firma (Links)
@@ -135,10 +138,13 @@ def generate_svg(data_df, meta_data):
     svg += get_row_svg(2, "Brunnentyp", meta_data["type"])
     svg += get_row_svg(3, "Datum", meta_data["date"])
 
-    # Titel
-    svg += f'<text x="{total_width/2}" y="{margin_top - 30}" font-size="18" font-weight="bold" text-anchor="middle">Bohrprofil</text>'
+    # --- TITEL ---
+    # Positionierung relativ zum Kasten-Ende (10 + head_height)
+    # Wir setzen den Titel 35 Pixel unter den Kasten.
+    title_y = 10 + head_height + 35 
+    svg += f'<text x="{total_width/2}" y="{title_y}" font-size="18" font-weight="bold" text-anchor="middle">Bohrprofil</text>'
 
-    # --- SKALA LINKS (Die Linie mit den Dreiecken) ---
+    # --- SKALA LINKS ---
     
     # Die Haupt-Vertikale Linie ganz links (Achse)
     svg += f'<line x1="{axis_x}" y1="{margin_top}" x2="{axis_x}" y2="{margin_top + max_depth * scale_y}" stroke="black" stroke-width="1" />'
@@ -148,14 +154,12 @@ def generate_svg(data_df, meta_data):
         y_pos = i * scale_y + margin_top
         
         # 1. Das Dreieck (Niveau-Symbol) direkt auf der Achse
-        # Pfad: Spitze unten auf der Linie, dann nach oben links und rechts
         svg += f'<path d="M{axis_x},{y_pos} l-5,-5 l10,0 z" fill="white" stroke="black" stroke-width="1"/>'
         
-        # 2. Verbindungslinie von der Achse rüber zum Profil
-        # Beginnt erst rechts vom Dreieck, damit es nicht durchgestrichen aussieht
+        # 2. Verbindungslinie (gestrichelt)
         svg += f'<line x1="{axis_x + 5}" y1="{y_pos}" x2="{profile_x}" y2="{y_pos}" stroke="black" stroke-width="0.5" stroke-dasharray="2,2" />'
         
-        # 3. Text (z.B. -1.00m) - Steht auf der Linie, links vom Dreieck
+        # 3. Text (z.B. -1.00m) - Links vom Dreieck
         svg += f'<text x="{axis_x - 10}" y="{y_pos - 2}" font-size="10" text-anchor="end">-{i}.00 m</text>'
         
         # 4. Kleiner Strich für den Text
@@ -179,9 +183,8 @@ def generate_svg(data_df, meta_data):
             # Rechteck
             svg += f'<rect x="{profile_x}" y="{y_start}" width="{profile_width}" height="{height}" fill="url(#pat-{safe_id})" stroke="black" />'
             
-            # Exakte Tiefe (Zahl) direkt am Balken unten links
+            # Exakte Tiefe (Zahl) direkt am Balken
             svg += f'<text x="{profile_x - 5}" y="{y_end}" font-size="10" text-anchor="end" dominant-baseline="middle">{tiefe_bis:.2f}m</text>'
-            # Kleiner Strich dazu
             svg += f'<line x1="{profile_x}" y1="{y_end}" x2="{profile_x - 5}" y2="{y_end}" stroke="black" />'
             
             # Beschriftung Text (Rechts)
