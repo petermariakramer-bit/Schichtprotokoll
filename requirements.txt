@@ -6,3 +6,4 @@ geopy
 svglib
 reportlab
 staticmap
+Pillow
