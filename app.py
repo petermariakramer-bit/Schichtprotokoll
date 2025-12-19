@@ -48,6 +48,7 @@ def get_static_map_image(lat, lon, zoom=15):
     except: return None
 
 def generate_svg_string(df_geo, df_rohr, df_ring, meta):
+    # ... (SVG Code bleibt identisch zur Vorversion) ...
     scale_y = 15
     width = 700
     max_depth = 48
@@ -71,7 +72,6 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     col_geo_w = 100
     col_tech_x = 350
     
-    # Skala
     svg += f'<line x1="{col_geo_x}" y1="{start_y}" x2="{col_geo_x}" y2="{start_y + max_depth*scale_y}" stroke="black"/>'
     for i in range(int(max_depth)+1):
         y = start_y + i*scale_y
@@ -108,48 +108,29 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
     return svg
 
 # ==============================================================================
-# 2. PDF HEADER FUNKTION (MIT 2-SPALTEN LAYOUT UNTEN)
+# 2. PDF HEADER (Bleibt gleich)
 # ==============================================================================
-
 def draw_header_on_page(canvas, doc):
     canvas.saveState()
     meta = doc.meta_data 
-    
     page_width, page_height = A4
     margin_left = 2*cm
     margin_right = 2*cm
-    
     box_w_firma = 3.5 * cm      
     box_w_akten = 4.0 * cm      
-    
     header_top = page_height - 1*cm
     header_bottom = page_height - 4.5*cm 
     row_line_y = header_bottom + 1.2*cm
-    
     x_line_1 = margin_left + box_w_firma
     x_line_2 = page_width - margin_right - box_w_akten
     
-    # 1. Rahmen (Außenlinien)
     canvas.setStrokeColor(colors.black)
     canvas.setLineWidth(1)
     canvas.rect(margin_left, header_bottom, page_width - margin_left - margin_right, header_top - header_bottom)
-    
-    # 2. Horizontale Linie (trennt obere und untere Zeile)
     canvas.line(margin_left, row_line_y, page_width - margin_right, row_line_y) 
-    
-    # 3. Vertikale Linien
-    # Linie 1 (Links): Trennt Logo und Titel. 
-    # WICHTIG: Geht nur von der Mitte (row_line_y) bis oben (header_top). Unten ist es offen!
     canvas.line(x_line_1, row_line_y, x_line_1, header_top) 
-    
-    # Linie 2 (Rechts): Trennt Titel/Inhalt und Aktenzeichen/Datum.
-    # WICHTIG: Geht durchgehend von unten (header_bottom) bis oben (header_top).
     canvas.line(x_line_2, header_bottom, x_line_2, header_top) 
     
-    
-    # --- INHALT ---
-    
-    # A) LOGO BEREICH (Oben Links)
     if meta.get('logo_bytes'):
         try:
             logo_data = ImageReader(BytesIO(meta['logo_bytes']))
@@ -167,9 +148,7 @@ def draw_header_on_page(canvas, doc):
             y_img = row_line_y + 0.2*cm + (avail_h - draw_h)/2
             canvas.drawImage(logo_data, x_img, y_img, width=draw_w, height=draw_h, mask='auto')
         except:
-            canvas.setFont("Helvetica-Bold", 8)
-            canvas.setFillColor(colors.red)
-            canvas.drawString(margin_left + 0.2*cm, header_top - 1.5*cm, "Logo Error")
+            pass
     else:
         canvas.setFont("Helvetica-Bold", 14)
         canvas.setFillColor(colors.green)
@@ -178,7 +157,6 @@ def draw_header_on_page(canvas, doc):
         canvas.setFillColor(colors.black)
         canvas.drawString(margin_left + 0.2*cm, header_top - 1.2*cm, meta['firma'])
     
-    # B) TITEL (Oben Mitte)
     center_x = x_line_1 + (x_line_2 - x_line_1) / 2
     canvas.setFillColor(colors.black)
     canvas.setFont("Helvetica-Bold", 12)
@@ -187,7 +165,6 @@ def draw_header_on_page(canvas, doc):
     canvas.drawCentredString(center_x, header_top - 1.0*cm, "nach DIN 4022 / DIN 4023")
     canvas.drawCentredString(center_x, header_top - 1.4*cm, "für Bohrungen ohne durchgehende Kerngewinnung")
     
-    # C) AKTENZEICHEN (Oben Rechts)
     text_x_right = x_line_2 + 0.2*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 0.6*cm, "Aktenzeichen:")
@@ -196,25 +173,21 @@ def draw_header_on_page(canvas, doc):
     canvas.setFont("Helvetica", 9)
     canvas.drawString(text_x_right, header_top - 1.5*cm, "Archiv-Nr:")
     
-    # D) UNTERE ZEILE (2 Spalten Layout)
-    
-    # Linke Spalte (Groß): Ort & Bohrung
     text_y_row = row_line_y - 0.4*cm
     canvas.setFont("Helvetica", 9)
     canvas.drawString(margin_left + 0.2*cm, text_y_row, f"Ort: {meta['ort']}")
     canvas.drawString(margin_left + 0.2*cm, text_y_row - 0.4*cm, f"Bohrung: {meta['projekt']}")
     
-    # Rechte Spalte (Klein): Datum & Blatt
+    canvas.line(x_line_2, header_bottom, x_line_2, row_line_y) 
     canvas.drawString(text_x_right, text_y_row, "Datum:")
     canvas.drawString(text_x_right, text_y_row - 0.4*cm, meta['datum'])
     
-    # Blatt Nr.
     page_num = doc.page
     canvas.drawRightString(page_width - margin_right - 0.2*cm, text_y_row - 0.2*cm, f"Blatt {page_num}")
     canvas.restoreState()
 
 # ==============================================================================
-# 3. PDF BUILDER
+# 3. PDF BUILDER (MIT ERWEITERTEN DATEN)
 # ==============================================================================
 
 def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, map_image_buffer):
@@ -228,25 +201,59 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
     styles = getSampleStyleSheet()
     style_h2 = styles['Heading2']
     style_norm = styles['Normal']
+    style_bold = ParagraphStyle('Bold', parent=styles['Normal'], fontName='Helvetica-Bold')
     
-    # Seite 1
-    story.append(Paragraph("Stammdaten Übersicht", style_h2))
+    # --- TABELLE 1: ALLGEMEINE DATEN ---
+    # Bohrung | Ort | Kreis | Zweck | Ansatzhöhe
     
-    data_stamm = [
-        ["Auftraggeber:", meta['auftraggeber']],
-        ["Bohrverfahren:", meta['verfahren']],
-        ["Endteufe:", f"{meta['teufe']} m"],
-        ["Ansatzpunkt:", f"{meta['ansatz']} m u. GOK"],
-        ["Grundwasser:", f"{meta['ws_ruhe']} m u. GOK"]
+    data_block1 = [
+        [Paragraph("Bohrung:", style_bold), Paragraph(meta['projekt'], style_norm)],
+        [Paragraph("Ort:", style_bold), Paragraph(meta['ort'], style_norm)],
+        [Paragraph("Kreis:", style_bold), Paragraph(meta['kreis'], style_norm)],
+        [Paragraph("Zweck der Bohrung:", style_bold), Paragraph(meta['zweck'], style_norm)],
+        [Paragraph("Höhe des Ansatzpunktes:", style_bold), Paragraph(f"{meta['ansatz']} m u. GOK", style_norm)]
     ]
-    t_stamm = Table(data_stamm, colWidths=[4*cm, 10*cm])
-    t_stamm.setStyle(TableStyle([
+    
+    t1 = Table(data_block1, colWidths=[5*cm, 11*cm])
+    t1.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
         ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
-        ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
+        ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
     ]))
-    story.append(t_stamm)
-    story.append(Spacer(1, 1*cm))
+    story.append(t1)
+    story.append(Spacer(1, 0.5*cm))
+    
+    # --- TABELLE 2: AUSFÜHRUNGSDATEN ---
+    # Auftraggeber | Objekt | Unternehmer | Zeitraum | Durchmesser/Verfahren
+    
+    data_block2 = [
+        [Paragraph("Auftraggeber:", style_bold), Paragraph(meta['auftraggeber'], style_norm)],
+        [Paragraph("Objekt:", style_bold), Paragraph(meta['objekt'], style_norm)],
+        [Paragraph("Bohrunternehmer:", style_bold), Paragraph(meta['firma'], style_norm)], # Firma als Unternehmer
+        [Paragraph("Gebohrt:", style_bold), Paragraph(meta['datum'], style_norm)],
+        [Paragraph("Bohrlochdurchmesser:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['durchmesser']}mm", style_norm)],
+        [Paragraph("Bohrverfahren:", style_bold), Paragraph(f"bis {meta['teufe']}m: {meta['verfahren']}", style_norm)]
+    ]
+    
+    t2 = Table(data_block2, colWidths=[5*cm, 11*cm])
+    t2.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
+        ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t2)
+    story.append(Spacer(1, 0.5*cm))
+    
+    # --- KARTE MIT KOORDINATEN ---
+    
+    # Koordinatenzeile (Gitterwerte)
+    coord_text = f"<b>Gitterwerte des Bohrpunktes:</b> Rechts: {meta['rechtswert']} | Hoch: {meta['hochwert']}"
+    story.append(Paragraph(coord_text, style_norm))
+    story.append(Spacer(1, 0.2*cm))
     
     story.append(Paragraph("Lageplan", style_h2))
     if map_image_buffer:
@@ -258,7 +265,7 @@ def create_multipage_pdf_with_header(meta, df_geo, df_rohr, df_ring, svg_bytes, 
         story.append(Paragraph("(Keine Karte)", style_norm))
     story.append(PageBreak())
     
-    # Seite 2
+    # Seite 2 (Schichten)
     table_headers = ["Tiefe bis", "Bodenart", "Zusatz", "Farbe", "Kalk", "Gruppe", "Bemerkung"]
     table_data = [table_headers]
     for _, row in df_geo.iterrows():
@@ -304,26 +311,42 @@ with st.expander("1. Kopfblatt & Standort", expanded=True):
         st.subheader("Stammdaten")
         logo_upload = st.file_uploader("Firmenlogo (für PDF Header)", type=["png", "jpg", "jpeg"])
         
+        # Block 1 Inputs
         projekt = st.text_input("Projekt / Bohrung", value="Notwasserbrunnen ZE079-905")
         ort = st.text_input("Ort / Adresse", value="Wiesenschlag ggü 4, 14129 Berlin")
+        kreis = st.text_input("Kreis", value="Berlin")
+        zweck = st.text_input("Zweck der Bohrung", value="Notbrunnen")
+        
         if st.button("📍 Adresse suchen"):
             try:
                 loc = Nominatim(user_agent="app").geocode(ort)
                 if loc: st.session_state.lat, st.session_state.lon = loc.latitude, loc.longitude
             except: pass
 
+        # Block 2 Inputs
         c1, c2 = st.columns(2)
         auftraggeber = c1.text_input("Auftraggeber", value="Berliner Wasserbetriebe")
-        bohrfirma = c2.text_input("Bohrunternehmer", value="Ackermann KG")
+        objekt = c2.text_input("Objekt", value="Notbrunnen")
         
         c3, c4 = st.columns(2)
-        datum_str = c3.text_input("Datum", value="06.10.25")
-        aktenzeichen = c4.text_input("Aktenzeichen", value="V26645")
+        bohrfirma = c3.text_input("Bohrunternehmer", value="Ackermann KG")
+        datum_str = c4.text_input("Bohrzeitraum", value="06.10.25 - 08.10.25")
         
+        # Technische Details
         c5, c6 = st.columns(2)
-        ansatzpunkt = c5.number_input("Ansatzpunkt", value=0.0)
-        endteufe = c6.number_input("Endteufe", value=45.0)
-        bohrverfahren = st.text_input("Verfahren", value="Spülbohren, Ø 330mm")
+        bohrdurchmesser = c5.number_input("Durchmesser (mm)", value=330)
+        bohrverfahren = c6.text_input("Verfahren", value="Spülbohren")
+        
+        c7, c8 = st.columns(2)
+        ansatzpunkt = c7.number_input("Ansatzhöhe (m)", value=0.0)
+        endteufe = c8.number_input("Endteufe (m)", value=45.0)
+        
+        # Koordinaten für Karte/Text
+        st.markdown("---")
+        c_coord1, c_coord2 = st.columns(2)
+        rechtswert = c_coord1.text_input("Rechtswert (Gitter)", value="378879.57")
+        hochwert = c_coord2.text_input("Hochwert (Gitter)", value="5810039.19")
+        aktenzeichen = st.text_input("Aktenzeichen", value="V26645")
 
     with col_map:
         m = folium.Map([st.session_state.lat, st.session_state.lon], zoom_start=16)
@@ -343,7 +366,7 @@ with st.expander("3. Ausbau", expanded=False):
     with c1:
         default_rohr = [{"Von": 0.0, "Bis": 40.0, "Typ": "Vollrohr", "DN": 150}, {"Von": 40.0, "Bis": 44.0, "Typ": "Filterrohr", "DN": 150}]
         df_rohr = st.data_editor(pd.DataFrame(default_rohr), num_rows="dynamic", key="rohr")
-        ws_ruhe = st.number_input("Ruhewasser", value=14.70)
+        ws_ruhe = st.number_input("Ruhewasser (m u. GOK)", value=14.70)
     with c2:
         default_ring = [{"Von": 0.0, "Bis": 14.0, "Mat": "Filterkies"}, {"Von": 14.0, "Bis": 29.0, "Mat": "Tonsperre"}]
         df_ring = st.data_editor(pd.DataFrame(default_ring), num_rows="dynamic", key="ring")
@@ -356,7 +379,10 @@ logo_bytes = logo_upload.getvalue() if logo_upload else None
 meta_data = {
     "projekt": projekt, "ort": ort, "firma": bohrfirma, "auftraggeber": auftraggeber,
     "datum": datum_str, "aktenzeichen": aktenzeichen, 
-    "verfahren": bohrverfahren, "ansatz": ansatzpunkt, "teufe": endteufe, "ws_ruhe": ws_ruhe,
+    "verfahren": bohrverfahren, "durchmesser": bohrdurchmesser,
+    "ansatz": ansatzpunkt, "teufe": endteufe, "ws_ruhe": ws_ruhe,
+    "kreis": kreis, "zweck": zweck, "objekt": objekt,
+    "rechtswert": rechtswert, "hochwert": hochwert,
     "logo_bytes": logo_bytes
 }
 
