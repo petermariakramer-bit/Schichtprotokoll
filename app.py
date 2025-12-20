@@ -27,6 +27,7 @@ from svglib.svglib import svg2rlg
 st.set_page_config(page_title="Profi Bohrprotokoll", layout="wide")
 
 # --- SESSION STATE INITIALISIERUNG ---
+# Standardwerte definieren
 defaults = {
     "projekt": "Notwasserbrunnen ZE079-905",
     "ort": "Wiesenschlag ggü 4, 14129 Berlin",
@@ -73,25 +74,50 @@ if "ring_data" not in st.session_state:
         {"Von": 14.0, "Bis": 29.0, "Mat": "Tonsperre"}
     ]
 
-st.title("🕳️ Bohrprotokoll & Schichtenverzeichnis")
+# --- LAYOUT KOPFZEILE (TITEL + MENÜ RECHTS OBEN) ---
+col_title, col_menu = st.columns([6, 2])
 
-# ==============================================================================
-# SPEICHERN & LADEN (SIDEBAR)
-# ==============================================================================
-with st.sidebar:
-    st.header("💾 Datei-Operationen")
-    uploaded_file = st.file_uploader("Projekt laden (.json)", type=["json"])
-    if uploaded_file is not None:
-        try:
-            data = json.load(uploaded_file)
-            for k, v in data.get("meta", {}).items():
-                st.session_state[k] = v
-            st.session_state.geo_data = data.get("geo", [])
-            st.session_state.rohr_data = data.get("rohr", [])
-            st.session_state.ring_data = data.get("ring", [])
-            st.success("Daten geladen! Bitte einmal Seite aktualisieren (F5) falls nötig.")
-        except Exception as e:
-            st.error(f"Fehler: {e}")
+with col_title:
+    st.title("🕳️ Bohrprotokoll & Schichtenverzeichnis")
+
+with col_menu:
+    # Unterteilung für die 2 Symbole
+    c_load, c_save = st.columns(2)
+    
+    with c_load:
+        # Laden-Symbol als Expander (kompakt)
+        with st.expander("📂", expanded=False):
+            uploaded_file = st.file_uploader("Laden", type=["json"], label_visibility="collapsed")
+            if uploaded_file is not None:
+                try:
+                    data = json.load(uploaded_file)
+                    for k, v in data.get("meta", {}).items():
+                        st.session_state[k] = v
+                    st.session_state.geo_data = data.get("geo", [])
+                    st.session_state.rohr_data = data.get("rohr", [])
+                    st.session_state.ring_data = data.get("ring", [])
+                    st.success("Geladen!")
+                except Exception as e:
+                    st.error(f"Fehler: {e}")
+
+    with c_save:
+        # Daten für Speichern vorbereiten (aus Session State lesen)
+        # Wir sammeln alle Keys, die in 'defaults' definiert sind
+        meta_save = {k: st.session_state.get(k, defaults[k]) for k in defaults.keys()}
+        save_data = {
+            "meta": meta_save,
+            "geo": st.session_state.geo_data,
+            "rohr": st.session_state.rohr_data,
+            "ring": st.session_state.ring_data
+        }
+        # Speichern-Button als Symbol
+        st.download_button(
+            label="💾", 
+            data=json.dumps(save_data, indent=2), 
+            file_name="bohrprojekt.json", 
+            mime="application/json",
+            help="Projekt speichern"
+        )
 
 # ==============================================================================
 # 1. HELPER: KARTE
@@ -204,7 +230,6 @@ def generate_svg_string(df_geo, df_rohr, df_ring, meta):
                 if col_geo_x <= x <= col_geo_x+col_geo_w: points.append((x, y_pos))
                 x = (y_pos + h) - k
                 if col_geo_x <= x <= col_geo_x+col_geo_w: points.append((x, y_pos+h))
-                
                 unique = sorted(list(set(points)))
                 if len(unique) >= 2:
                     pattern_group += f'<line x1="{unique[0][0]:.1f}" y1="{unique[0][1]:.1f}" x2="{unique[-1][0]:.1f}" y2="{unique[-1][1]:.1f}" stroke="black" stroke-width="1"/>'
@@ -474,10 +499,6 @@ with st.expander("3. Ausbau", expanded=False):
 st.divider()
 logo_bytes = logo_upload.getvalue() if logo_upload else None
 meta_data = {"projekt": projekt, "ort": ort, "firma": bohrfirma, "auftraggeber": auftraggeber, "datum": datum_str, "aktenzeichen": aktenzeichen, "verfahren": bohrverfahren, "durchmesser": bohrdurchmesser, "ansatz": ansatzpunkt, "teufe": endteufe, "ws_ruhe": ws_ruhe, "kreis": kreis, "zweck": zweck, "art_bohrung": art_bohrung, "objekt": objekt, "geraetefuehrer": geraetefuehrer, "rechtswert": rechtswert, "hochwert": hochwert, "logo_bytes": logo_bytes}
-
-with st.sidebar:
-    save_data = {"meta": {k: v for k, v in meta_data.items() if k != "logo_bytes"}, "geo": st.session_state.geo_data, "rohr": st.session_state.rohr_data, "ring": st.session_state.ring_data}
-    st.download_button("💾 Speichern", data=json.dumps(save_data, indent=2), file_name="projekt.json", mime="application/json")
 
 if st.button("📄 PDF mit Logo erstellen"):
     svg_str = generate_svg_string(df_geo, df_rohr, df_ring, meta_data)
